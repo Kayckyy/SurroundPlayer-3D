@@ -8,7 +8,6 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.SeekBar
 import androidx.fragment.app.Fragment
-import com.bumptech.glide.Glide
 import com.example.musicplayer.databinding.FragmentNowPlayingBinding
 
 class NowPlayingFragment : Fragment() {
@@ -17,8 +16,7 @@ class NowPlayingFragment : Fragment() {
     private val binding get() = _binding!!
     private var handler = Handler(Looper.getMainLooper())
     private var updateSeekbar: Runnable? = null
-    private var isPlaying = false
-    private var isFavorite = false
+    private var isServiceReady = false
 
     override fun onCreateView(
         inflater: LayoutInflater,
@@ -35,14 +33,32 @@ class NowPlayingFragment : Fragment() {
         setupControls()
     }
 
+    override fun onResume() {
+        super.onResume()
+        if (!isServiceReady) {
+            val service = getMusicService()
+            if (service != null) {
+                onServiceReady()
+            } else {
+                Handler(Looper.getMainLooper()).postDelayed({
+                    val retryService = getMusicService()
+                    if (retryService != null) {
+                        onServiceReady()
+                    }
+                }, 500)
+            }
+        }
+    }
+
+    fun onServiceReady() {
+        isServiceReady = true
+        updateMusicInfo()
+        updateControlStates()
+        startSeekbarUpdate()
+    }
+
     private fun setupUI() {
-        // Usar um placeholder local
         binding.albumArt.setImageResource(R.drawable.album_placeholder)
-
-        binding.songTitle.text = "Song Title"
-        binding.artistName.text = "Artist Name"
-        binding.albumName.text = "Album Name"
-
         setupSeekbar()
     }
 
@@ -50,7 +66,7 @@ class NowPlayingFragment : Fragment() {
         binding.seekBar.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
                 if (fromUser) {
-                    // Update playback position
+                    getMusicService()?.seekTo(progress)
                     binding.currentTime.text = formatTime(progress)
                 }
             }
@@ -58,17 +74,15 @@ class NowPlayingFragment : Fragment() {
             override fun onStartTrackingTouch(seekBar: SeekBar?) {}
             override fun onStopTrackingTouch(seekBar: SeekBar?) {}
         })
-
-        // Set initial values
-        binding.seekBar.max = 100
-        binding.seekBar.progress = 0
-        binding.currentTime.text = "0:00"
-        binding.totalTime.text = "3:30"
     }
 
     private fun setupControls() {
         binding.btnPrevious.setOnClickListener {
-            // Previous song
+            getMusicService()?.playPrevious()
+            handler.postDelayed({
+                updateMusicInfo()
+                updateControlStates()
+            }, 100)
         }
 
         binding.btnPlayPause.setOnClickListener {
@@ -76,47 +90,79 @@ class NowPlayingFragment : Fragment() {
         }
 
         binding.btnNext.setOnClickListener {
-            // Next song
-        }
-
-        binding.btnRepeat.setOnClickListener {
-            toggleRepeat()
+            getMusicService()?.playNext()
+            handler.postDelayed({
+                updateMusicInfo()
+                updateControlStates()
+            }, 100)
         }
 
         binding.btnShuffle.setOnClickListener {
-            toggleShuffle()
+            val isShuffling = getMusicService()?.toggleShuffle() ?: false
+            updateShuffleButton(isShuffling)
+        }
+
+        binding.btnRepeat.setOnClickListener {
+            val repeatMode = getMusicService()?.toggleRepeat() ?: MusicService.REPEAT_NONE
+            updateRepeatButton(repeatMode)
         }
 
         binding.btnFavorite.setOnClickListener {
-            toggleFavorite()
+            // Implementar favoritos depois
         }
     }
 
     private fun togglePlayPause() {
-        isPlaying = !isPlaying
-        if (isPlaying) {
-            binding.btnPlayPause.setImageResource(R.drawable.ic_pause)
-            startSeekbarUpdate()
+        if (getMusicService()?.isPlaying() == true) {
+            getMusicService()?.pauseMusic()
         } else {
-            binding.btnPlayPause.setImageResource(R.drawable.ic_play)
-            stopSeekbarUpdate()
+            getMusicService()?.resumeMusic()
         }
+        handler.postDelayed({
+            updatePlayPauseButton()
+        }, 50)
     }
 
-    private fun toggleRepeat() {
-        // Implement repeat logic
+    private fun updateControlStates() {
+        updatePlayPauseButton()
+        updateShuffleButton(getMusicService()?.isShuffling() ?: false)
+        updateRepeatButton(getMusicService()?.getRepeatMode() ?: MusicService.REPEAT_NONE)
     }
 
-    private fun toggleShuffle() {
-        // Implement shuffle logic
+    private fun updatePlayPauseButton() {
+        val isPlaying = getMusicService()?.isPlaying() == true
+        binding.btnPlayPause.setImageResource(
+            if (isPlaying) R.drawable.ic_pause else R.drawable.ic_play
+        )
     }
 
-    private fun toggleFavorite() {
-        isFavorite = !isFavorite
-        if (isFavorite) {
-            binding.btnFavorite.setImageResource(android.R.drawable.btn_star_big_on)
+    private fun updateShuffleButton(isShuffling: Boolean) {
+        val color = if (isShuffling) R.color.spotify_green else R.color.gray
+        binding.btnShuffle.setColorFilter(requireContext().getColor(color))
+    }
+
+    private fun updateRepeatButton(repeatMode: Int) {
+        val icon = when (repeatMode) {
+            MusicService.REPEAT_ALL -> R.drawable.ic_repeat_all
+            MusicService.REPEAT_ONE -> R.drawable.ic_repeat_one
+            else -> R.drawable.ic_repeat
+        }
+        val color = if (repeatMode != MusicService.REPEAT_NONE) R.color.spotify_green else R.color.gray
+
+        binding.btnRepeat.setImageResource(icon)
+        binding.btnRepeat.setColorFilter(requireContext().getColor(color))
+    }
+
+    private fun updateMusicInfo() {
+        val currentMusic = getMusicService()?.getCurrentMusic()
+        if (currentMusic != null) {
+            binding.songTitle.text = currentMusic.title
+            binding.artistName.text = currentMusic.artist
+            binding.albumName.text = currentMusic.album
         } else {
-            binding.btnFavorite.setImageResource(android.R.drawable.btn_star_big_off)
+            binding.songTitle.text = "Nenhuma música"
+            binding.artistName.text = "Selecione uma música"
+            binding.albumName.text = ""
         }
     }
 
@@ -135,18 +181,28 @@ class NowPlayingFragment : Fragment() {
     }
 
     private fun updateSeekbarProgress() {
-        val currentProgress = binding.seekBar.progress
-        if (currentProgress < binding.seekBar.max) {
-            binding.seekBar.progress = currentProgress + 1
-            binding.currentTime.text = formatTime(binding.seekBar.progress)
-        }
+        val service = getMusicService()
+        val currentPosition = service?.getCurrentPosition() ?: 0
+        val duration = service?.getDuration() ?: 0
+
+        binding.seekBar.max = duration
+        binding.seekBar.progress = currentPosition
+        binding.currentTime.text = formatTime(currentPosition)
+        binding.totalTime.text = formatTime(duration)
+
+        updatePlayPauseButton()
+        updateMusicInfo()
     }
 
-    private fun formatTime(progress: Int): String {
-        val totalSeconds = (progress * 210 / 100) // Simulate 3:30 song
+    private fun formatTime(milliseconds: Int): String {
+        val totalSeconds = milliseconds / 1000
         val minutes = totalSeconds / 60
         val seconds = totalSeconds % 60
-        return String.format("%d:%02d", minutes, seconds)
+        return String.format("%02d:%02d", minutes, seconds)
+    }
+
+    private fun getMusicService(): MusicService? {
+        return (requireActivity() as? MainActivity)?.getMusicService() ?: MusicService.getInstance()
     }
 
     override fun onDestroyView() {

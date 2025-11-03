@@ -11,7 +11,7 @@ class ViewPagerAdapter(fa: FragmentActivity) : FragmentStateAdapter(fa) {
     override fun createFragment(position: Int): Fragment {
         return when(position) {
             0 -> NowPlayingFragment()
-            1 -> PlaylistFragment()
+            1 -> FileExplorerFragment()
             2 -> SettingsFragment()
             else -> NowPlayingFragment()
         }
