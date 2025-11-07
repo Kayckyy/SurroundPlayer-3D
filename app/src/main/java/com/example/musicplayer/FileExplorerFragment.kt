@@ -5,6 +5,8 @@ import android.os.Environment
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.widget.Toast
+import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
@@ -33,7 +35,6 @@ class FileExplorerFragment : Fragment() {
         super.onViewCreated(view, savedInstanceState)
         setupRecyclerView()
 
-        // Tentar carregar a última pasta usada
         val lastFolder = getMusicService()?.getCurrentFolder()
         if (!lastFolder.isNullOrEmpty() && File(lastFolder).exists()) {
             currentPath = lastFolder
@@ -130,8 +131,15 @@ class FileExplorerFragment : Fragment() {
             holder.binding.apply {
                 fileName.text = item.name
 
+                val isFavorite = if (item.isMusicFile) {
+                    getMusicService()?.isFavorite(item.path) ?: false
+                } else {
+                    false
+                }
+
                 fileIcon.setImageResource(
                     when {
+                        isFavorite -> R.drawable.ic_favorite_filled
                         item.isDirectory -> R.drawable.ic_folder
                         item.isMusicFile -> R.drawable.ic_music_note
                         else -> R.drawable.ic_file
@@ -139,21 +147,47 @@ class FileExplorerFragment : Fragment() {
                 )
 
                 val textColor = if (item.isMusicFile) {
-                    requireContext().getColor(R.color.spotify_green)
+                    if (isFavorite) {
+                        ContextCompat.getColor(requireContext(), R.color.spotify_green)
+                    } else {
+                        ContextCompat.getColor(requireContext(), R.color.white)
+                    }
                 } else {
-                    requireContext().getColor(R.color.white)
+                    ContextCompat.getColor(requireContext(), R.color.white)
                 }
                 fileName.setTextColor(textColor)
 
                 root.setOnClickListener {
                     if (item.isDirectory) {
-                        if (item.name == "..") {
-                            loadDirectory(item.path)
-                        } else {
-                            loadDirectory(item.path)
-                        }
+                        loadDirectory(item.path)
                     } else if (item.isMusicFile) {
                         playMusicFile(item.path)
+                    }
+                }
+
+                root.setOnLongClickListener {
+                    if (item.isMusicFile) {
+                        val isNowFavorite = getMusicService()?.toggleFavorite(item.path) ?: false
+
+                        fileIcon.setImageResource(
+                            if (isNowFavorite) R.drawable.ic_favorite_filled else R.drawable.ic_music_note
+                        )
+
+                        val newColor = if (isNowFavorite) {
+                            ContextCompat.getColor(requireContext(), R.color.spotify_green)
+                        } else {
+                            ContextCompat.getColor(requireContext(), R.color.white)
+                        }
+                        fileName.setTextColor(newColor)
+
+                        Toast.makeText(requireContext(),
+                            if (isNowFavorite) "Adicionado aos favoritos" else "Removido dos favoritos",
+                            Toast.LENGTH_SHORT
+                        ).show()
+
+                        true
+                    } else {
+                        false
                     }
                 }
             }

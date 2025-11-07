@@ -12,7 +12,9 @@ import android.graphics.BitmapFactory
 import android.media.MediaPlayer
 import android.os.Binder
 import android.os.Build
+import android.os.Handler
 import android.os.IBinder
+import android.os.Looper
 import androidx.core.app.NotificationCompat
 import java.io.File
 
@@ -25,11 +27,13 @@ class MusicService : Service() {
     private var isPrepared = false
     private var isShuffling = false
     private var repeatMode = REPEAT_NONE
+    private var isServiceStopping = false
 
     private val channelId = "music_player_channel"
     private val notificationId = 1
 
     private lateinit var prefs: SharedPreferences
+    private val handler = Handler(Looper.getMainLooper())
 
     companion object {
         const val ACTION_PLAY = "com.example.musicplayer.ACTION_PLAY"
@@ -47,12 +51,16 @@ class MusicService : Service() {
         private var instance: MusicService? = null
         fun getInstance(): MusicService? = instance
 
-        // Chaves para SharedPreferences
         private const val PREFS_NAME = "music_prefs"
         private const val KEY_CURRENT_PATH = "current_path"
         private const val KEY_CURRENT_INDEX = "current_index"
         private const val KEY_SHUFFLE = "shuffle_mode"
         private const val KEY_REPEAT = "repeat_mode"
+        private const val KEY_IS_PLAYING = "is_playing"
+        private const val KEY_LAST_POSITION = "last_position"
+        private const val KEY_LAST_MUSIC_PATH = "last_music_path"
+        private const val KEY_FAVORITES = "favorite_musics"
+        private const val KEY_SERVICE_RUNNING = "service_running"
     }
 
     inner class MusicBinder : Binder() {
@@ -66,37 +74,63 @@ class MusicService : Service() {
         instance = this
         prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
+        // MARCAR SERVICE COMO EXECUTANDO
+        prefs.edit().putBoolean(KEY_SERVICE_RUNNING, true).apply()
+
         mediaPlayer = MediaPlayer().apply {
             setOnCompletionListener {
                 onTrackCompletion()
-            }
-            setOnPreparedListener {
-                isPrepared = true
-                start()
-                updateNotification()
             }
             setOnErrorListener { _, what, extra ->
                 false
             }
         }
         createNotificationChannel()
-        startForegroundService()
 
-        // Restaurar estado salvo
+        // SÓ INICIAR FOREGROUND SE HOUVER MÚSICA TOCANDO
+        if (shouldStartForeground()) {
+            startForegroundService()
+        }
+
         restoreState()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        when (intent?.action) {
-            ACTION_PLAY -> resumeMusic()
-            ACTION_PAUSE -> pauseMusic()
-            ACTION_NEXT -> playNext()
-            ACTION_PREVIOUS -> playPrevious()
-            ACTION_STOP -> stopMusic()
-            ACTION_TOGGLE_SHUFFLE -> toggleShuffle()
-            ACTION_TOGGLE_REPEAT -> toggleRepeat()
+        intent?.action?.let { action ->
+            when (action) {
+                ACTION_PLAY -> resumeMusic()
+                ACTION_PAUSE -> pauseMusic()
+                ACTION_NEXT -> playNext()
+                ACTION_PREVIOUS -> playPrevious()
+                ACTION_STOP -> {
+                    stopMusicCompletely()
+                    return START_NOT_STICKY // NÃO REINICIAR APÓS STOP
+                }
+                ACTION_TOGGLE_SHUFFLE -> toggleShuffle()
+                ACTION_TOGGLE_REPEAT -> toggleRepeat()
+            }
         }
-        return START_STICKY
+
+        // SE NÃO HOUVER AÇÃO ESPECÍFICA, VERIFICAR SE PRECISA RESTAURAR
+        if (intent?.action == null && shouldRestorePlayback()) {
+            restorePlaybackState()
+        }
+
+        return START_NOT_STICKY // IMPEDIR REINICIAÇÃO AUTOMÁTICA
+    }
+
+    // VERIFICAR SE DEVE INICIAR EM FOREGROUND
+    private fun shouldStartForeground(): Boolean {
+        val wasPlaying = prefs.getBoolean(KEY_IS_PLAYING, false)
+        val hasMusicPath = prefs.getString(KEY_LAST_MUSIC_PATH, "")?.isNotEmpty() == true
+        return wasPlaying && hasMusicPath
+    }
+
+    // VERIFICAR SE DEVE RESTAURAR REPRODUÇÃO
+    private fun shouldRestorePlayback(): Boolean {
+        val wasPlaying = prefs.getBoolean(KEY_IS_PLAYING, false)
+        val hasMusicPath = prefs.getString(KEY_LAST_MUSIC_PATH, "")?.isNotEmpty() == true
+        return wasPlaying && hasMusicPath && musicList.isEmpty()
     }
 
     private fun startForegroundService() {
@@ -121,22 +155,33 @@ class MusicService : Service() {
     }
 
     private fun updateNotification() {
+        // SÓ ATUALIZAR NOTIFICAÇÃO SE ESTIVER EM FOREGROUND
+        if (isServiceStopping) return
+
         val currentMusic = getCurrentMusic()
         val notification = createNotification(currentMusic)
         val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        notificationManager.notify(notificationId, notification)
+
+        if (shouldStartForeground()) {
+            startForeground(notificationId, notification)
+        } else {
+            notificationManager.notify(notificationId, notification)
+        }
     }
 
     private fun createNotification(music: Music?): Notification {
         val openAppIntent = Intent(this, MainActivity::class.java).apply {
-            flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_NEW_TASK
+            action = "OPEN_EXISTING"
+            putExtra("FROM_NOTIFICATION", true)
+            putExtra("RESTORE_PLAYBACK", true)
         }
+
         val openAppPendingIntent = PendingIntent.getActivity(
             this, 0, openAppIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
-        // CORRIGIDO: Usar ações corretas para shuffle e repeat
         val previousIntent = Intent(this, MusicService::class.java).apply {
             action = ACTION_PREVIOUS
         }
@@ -199,7 +244,7 @@ class MusicService : Service() {
             "Pausado"
         }
 
-        return NotificationCompat.Builder(this, channelId)
+        val notificationBuilder = NotificationCompat.Builder(this, channelId)
             .setContentTitle(music?.title ?: "Music Player")
             .setContentText(contentText)
             .setSmallIcon(R.drawable.ic_music_note)
@@ -211,17 +256,63 @@ class MusicService : Service() {
             .addAction(R.drawable.ic_skip_previous, "Anterior", previousPendingIntent)
             .addAction(playPauseIcon, if (isPlaying()) "Pausar" else "Tocar", playPausePendingIntent)
             .addAction(R.drawable.ic_skip_next, "Próxima", nextPendingIntent)
-            .addAction(shuffleIcon, "Embaralhar", shufflePendingIntent) // CORRIGIDO
-            .addAction(repeatIcon, "Repetir", repeatPendingIntent) // CORRIGIDO
+            .addAction(shuffleIcon, "Embaralhar", shufflePendingIntent)
+            .addAction(repeatIcon, "Repetir", repeatPendingIntent)
             .addAction(R.drawable.ic_stop, "Parar", stopPendingIntent)
-            .setStyle(androidx.media.app.NotificationCompat.MediaStyle()
-                .setShowActionsInCompactView(0, 1, 2)
-                .setShowCancelButton(true)
-                .setCancelButtonIntent(stopPendingIntent))
-            .build()
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            notificationBuilder.setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
+        }
+
+        notificationBuilder.setStyle(androidx.media.app.NotificationCompat.MediaStyle()
+            .setShowActionsInCompactView(0, 1, 2)
+            .setShowCancelButton(true)
+            .setCancelButtonIntent(stopPendingIntent))
+
+        return notificationBuilder.build()
     }
 
-    // NOVO: Carregar todas as músicas de uma pasta
+    // RESTAURAR ESTADO DE REPRODUÇÃO
+    private fun restorePlaybackState() {
+        val lastMusicPath = prefs.getString(KEY_LAST_MUSIC_PATH, "")
+        val lastPosition = prefs.getInt(KEY_LAST_POSITION, 0)
+        val wasPlaying = prefs.getBoolean(KEY_IS_PLAYING, false)
+
+        if (lastMusicPath?.isNotEmpty() == true) {
+            val file = File(lastMusicPath)
+            if (file.exists()) {
+                playMusicFile(lastMusicPath)
+
+                // Restaurar posição após preparar
+                handler.postDelayed({
+                    if (lastPosition > 0 && lastPosition < (getDuration() - 5000)) {
+                        seekTo(lastPosition)
+                    }
+                    if (wasPlaying) {
+                        mediaPlayer?.start()
+                    }
+                }, 1000)
+            }
+        }
+    }
+
+    // RESTAURAR POSIÇÃO APÓS PREPARAR
+    private fun restorePlaybackPosition() {
+        val lastPosition = prefs.getInt(KEY_LAST_POSITION, 0)
+        val lastMusicPath = prefs.getString(KEY_LAST_MUSIC_PATH, "")
+        val currentMusicPath = getCurrentMusic()?.path
+
+        if (lastMusicPath == currentMusicPath && lastPosition > 0 && lastPosition < (getDuration() - 5000)) {
+            handler.postDelayed({
+                mediaPlayer?.seekTo(lastPosition)
+            }, 100)
+        }
+
+        // SEMPRE INICIAR REPRODUÇÃO PARA NOVAS MÚSICAS
+        mediaPlayer?.start()
+        updateNotification()
+    }
+
     fun loadMusicFilesFromFolder(folderPath: String) {
         musicList.clear()
         val folder = File(folderPath)
@@ -232,13 +323,15 @@ class MusicService : Service() {
                 if (file.isFile) {
                     val extension = file.extension.lowercase()
                     if (musicExtensions.contains(extension)) {
+                        val isFavorite = isFavorite(file.absolutePath)
                         val music = Music(
                             id = System.currentTimeMillis() + musicList.size,
                             title = file.nameWithoutExtension,
                             artist = "Artista Desconhecido",
                             album = folder.name,
                             duration = 0,
-                            path = file.absolutePath
+                            path = file.absolutePath,
+                            isFavorite = isFavorite
                         )
                         musicList.add(music)
                     }
@@ -246,23 +339,15 @@ class MusicService : Service() {
             }
         }
 
-        // Salvar a pasta atual
         saveCurrentFolder(folderPath)
-
-        if (musicList.isNotEmpty()) {
-            currentMusicIndex = 0
-            playMusic(0)
-        }
     }
 
     fun playMusicFile(filePath: String) {
         val file = File(filePath)
         val folderPath = file.parent ?: return
 
-        // Carregar todas as músicas da mesma pasta
         loadMusicFilesFromFolder(folderPath)
 
-        // Encontrar o índice da música específica
         val index = musicList.indexOfFirst { it.path == filePath }
         if (index != -1) {
             currentMusicIndex = index
@@ -276,10 +361,18 @@ class MusicService : Service() {
             val music = musicList[index]
 
             mediaPlayer?.reset()
+            isPrepared = false
+
             try {
                 mediaPlayer?.setDataSource(music.path)
                 mediaPlayer?.prepareAsync()
-                saveState() // Salvar estado quando nova música começa
+
+                mediaPlayer?.setOnPreparedListener {
+                    isPrepared = true
+                    restorePlaybackPosition()
+                    saveState()
+                }
+
             } catch (e: Exception) {
                 e.printStackTrace()
             }
@@ -308,12 +401,26 @@ class MusicService : Service() {
         saveState()
     }
 
-    fun stopMusic() {
+    // PARAR COMPLETAMENTE (SEM REINICIAR)
+    fun stopMusicCompletely() {
+        isServiceStopping = true
+        saveState()
+
         mediaPlayer?.stop()
         mediaPlayer?.reset()
         isPrepared = false
+
         stopForeground(true)
         stopSelf()
+
+        // MARCAR SERVICE COMO PARADO
+        prefs.edit().putBoolean(KEY_SERVICE_RUNNING, false).apply()
+        instance = null
+    }
+
+    // MANTIDO PARA COMPATIBILIDADE
+    fun stopMusic() {
+        stopMusicCompletely()
     }
 
     fun playNext() {
@@ -341,10 +448,10 @@ class MusicService : Service() {
     fun seekTo(position: Int) {
         if (isPrepared) {
             mediaPlayer?.seekTo(position)
+            saveState()
         }
     }
 
-    // CONTROLES EXTRAS CORRIGIDOS
     fun toggleShuffle(): Boolean {
         isShuffling = !isShuffling
         updateNotification()
@@ -367,7 +474,6 @@ class MusicService : Service() {
             REPEAT_ONE -> playMusic(currentMusicIndex)
             REPEAT_ALL -> playNext()
             else -> if (currentMusicIndex < musicList.size - 1) playNext() else {
-                // Se não há repeat e é a última música, para
                 pauseMusic()
             }
         }
@@ -381,12 +487,66 @@ class MusicService : Service() {
     fun getMusicList(): List<Music> = musicList
     fun hasMusic(): Boolean = musicList.isNotEmpty()
 
-    // SALVAR E RESTAURAR ESTADO
+    // FAVORITOS
+    private fun getFavoritePaths(): Set<String> {
+        return prefs.getStringSet(KEY_FAVORITES, mutableSetOf()) ?: mutableSetOf()
+    }
+
+    private fun saveFavoritePaths(favorites: Set<String>) {
+        prefs.edit().putStringSet(KEY_FAVORITES, favorites).apply()
+    }
+
+    fun toggleFavorite(musicPath: String): Boolean {
+        val favorites = getFavoritePaths().toMutableSet()
+        val isNowFavorite = if (favorites.contains(musicPath)) {
+            favorites.remove(musicPath)
+            false
+        } else {
+            favorites.add(musicPath)
+            true
+        }
+        saveFavoritePaths(favorites)
+
+        val musicIndex = musicList.indexOfFirst { it.path == musicPath }
+        if (musicIndex != -1) {
+            musicList[musicIndex] = musicList[musicIndex].copy(isFavorite = isNowFavorite)
+        }
+
+        return isNowFavorite
+    }
+
+    fun isFavorite(musicPath: String): Boolean {
+        return getFavoritePaths().contains(musicPath)
+    }
+
+    fun getFavorites(): List<Music> {
+        val favoritePaths = getFavoritePaths()
+        return musicList.filter { favoritePaths.contains(it.path) }
+    }
+
+    // SALVAR ESTADO PERIÓDICO
+    private val saveStateRunnable = object : Runnable {
+        override fun run() {
+            if (isPrepared && !isServiceStopping) {
+                saveState()
+            }
+            handler.postDelayed(this, 5000)
+        }
+    }
+
+    // SALVAR ESTADO
     private fun saveState() {
+        if (isServiceStopping) return
+
+        val currentMusic = getCurrentMusic()
         prefs.edit().apply {
             putInt(KEY_CURRENT_INDEX, currentMusicIndex)
             putBoolean(KEY_SHUFFLE, isShuffling)
             putInt(KEY_REPEAT, repeatMode)
+            putBoolean(KEY_IS_PLAYING, isPlaying())
+            putInt(KEY_LAST_POSITION, getCurrentPosition())
+            putString(KEY_LAST_MUSIC_PATH, currentMusic?.path ?: "")
+            putBoolean(KEY_SERVICE_RUNNING, true)
         }.apply()
     }
 
@@ -403,18 +563,24 @@ class MusicService : Service() {
         isShuffling = prefs.getBoolean(KEY_SHUFFLE, false)
         repeatMode = prefs.getInt(KEY_REPEAT, REPEAT_NONE)
 
-        // Se tinha uma pasta salva, carregar as músicas
         val savedFolder = getCurrentFolder()
         if (savedFolder.isNotEmpty() && File(savedFolder).exists()) {
             loadMusicFilesFromFolder(savedFolder)
         }
+
+        handler.post(saveStateRunnable)
     }
 
     override fun onDestroy() {
         super.onDestroy()
-        saveState()
+        if (!isServiceStopping) {
+            saveState()
+        }
+        handler.removeCallbacks(saveStateRunnable)
         instance = null
         mediaPlayer?.release()
-        stopForeground(true)
+
+        // MARCAR SERVICE COMO PARADO
+        prefs.edit().putBoolean(KEY_SERVICE_RUNNING, false).apply()
     }
 }

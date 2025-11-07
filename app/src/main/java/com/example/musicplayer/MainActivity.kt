@@ -8,7 +8,9 @@ import android.content.ServiceConnection
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
 import android.os.IBinder
+import android.os.Looper
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
@@ -22,8 +24,9 @@ class MainActivity : AppCompatActivity() {
     private var musicService: MusicService? = null
     private var isBound = false
     private var isServiceStarting = false
+    private var isFromNotification = false
+    private var shouldRestorePlayback = false
 
-    // Sistema de permissões CORRIGIDO
     private val requestPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { isGranted ->
@@ -41,8 +44,6 @@ class MainActivity : AppCompatActivity() {
             isBound = true
             isServiceStarting = false
             notifyFragmentsServiceReady()
-
-            // Verificar permissão após conectar ao service
             checkStoragePermission()
         }
 
@@ -55,18 +56,44 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
+        if (!isTaskRoot) {
+            val intent = intent
+            if (intent.hasCategory(Intent.CATEGORY_LAUNCHER) && intent.action == Intent.ACTION_MAIN) {
+                finish()
+                return
+            }
+        }
+
+        isFromNotification = intent.getBooleanExtra("FROM_NOTIFICATION", false)
+        shouldRestorePlayback = intent.getBooleanExtra("RESTORE_PLAYBACK", false)
+
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
+        setupViewPager()
+        initializeService()
+    }
+
+    private fun initializeService() {
         musicService = MusicService.getInstance()
         if (musicService != null) {
             isBound = true
             notifyFragmentsServiceReady()
-        } else {
-            startMusicService()
-        }
 
-        setupViewPager()
+            if (isFromNotification) {
+                switchToNowPlayingTab()
+            }
+        } else {
+            // VERIFICAR SE HÁ ESTADO SALVO ANTES DE INICIAR SERVICE
+            val prefs = getSharedPreferences("music_prefs", Context.MODE_PRIVATE)
+            val wasPlaying = prefs.getBoolean("is_playing", false)
+            val hasLastMusic = prefs.getString("last_music_path", "")?.isNotEmpty() == true
+
+            if (wasPlaying && hasLastMusic) {
+                startMusicService()
+            }
+            // SE NÃO HAVIA MÚSICA TOCANDO, NÃO INICIAR SERVICE AUTOMATICAMENTE
+        }
     }
 
     private fun setupViewPager() {
@@ -88,6 +115,7 @@ class MainActivity : AppCompatActivity() {
 
         isServiceStarting = true
         val intent = Intent(this, MusicService::class.java)
+
         bindService(intent, serviceConnection, Context.BIND_AUTO_CREATE)
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -97,7 +125,6 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    // VERIFICAR PERMISSÃO CORRETAMENTE
     private fun checkStoragePermission() {
         val permission = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             Manifest.permission.READ_MEDIA_AUDIO
@@ -106,17 +133,23 @@ class MainActivity : AppCompatActivity() {
         }
 
         if (ContextCompat.checkSelfPermission(this, permission) != PackageManager.PERMISSION_GRANTED) {
-            // Mostrar explicação antes de pedir permissão
-            if (shouldShowRequestPermissionRationale(permission)) {
-                Toast.makeText(this, "O app precisa de permissão para acessar suas músicas", Toast.LENGTH_LONG).show()
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                if (shouldShowRequestPermissionRationale(permission)) {
+                    Toast.makeText(this, "O app precisa de permissão para acessar suas músicas", Toast.LENGTH_LONG).show()
+                }
             }
-            // Pedir permissão
             requestPermissionLauncher.launch(permission)
         }
     }
 
     fun getMusicService(): MusicService? {
-        return musicService ?: MusicService.getInstance()
+        if (!isBound) {
+            musicService = MusicService.getInstance()
+            if (musicService != null) {
+                isBound = true
+            }
+        }
+        return musicService
     }
 
     fun switchToNowPlayingTab() {
@@ -132,16 +165,35 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    override fun onResume() {
-        super.onResume()
-        if (!isBound && musicService == null) {
-            musicService = MusicService.getInstance()
-            if (musicService == null) {
-                startMusicService()
-            } else {
-                isBound = true
+    override fun onNewIntent(intent: Intent?) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        isFromNotification = intent?.getBooleanExtra("FROM_NOTIFICATION", false) ?: false
+        shouldRestorePlayback = intent?.getBooleanExtra("RESTORE_PLAYBACK", false) ?: false
+
+        if (isFromNotification || shouldRestorePlayback) {
+            switchToNowPlayingTab()
+
+            // Se tem música e veio para restaurar reprodução, garantir que está pronto
+            if (musicService?.hasMusic() == true) {
                 notifyFragmentsServiceReady()
             }
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+
+        if (!isBound && musicService == null) {
+            Handler(Looper.getMainLooper()).postDelayed({
+                musicService = MusicService.getInstance()
+                if (musicService == null) {
+                    startMusicService()
+                } else {
+                    isBound = true
+                    notifyFragmentsServiceReady()
+                }
+            }, 300)
         }
     }
 

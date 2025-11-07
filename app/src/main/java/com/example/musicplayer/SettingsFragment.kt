@@ -27,8 +27,7 @@ class SettingsFragment : Fragment() {
     }
 
     private fun setupSettings() {
-        // Implement settings options here
-        binding.textView.text = "Settings Screen"
+        binding.textView.text = "Configurações\n\n(Em breve: Equalizador e Efeitos 3D)"
     }
 
     override fun onDestroyView() {

@@ -1,5 +1,6 @@
 package com.example.musicplayer
 
+import android.graphics.Bitmap
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -7,6 +8,7 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.SeekBar
+import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
 import com.example.musicplayer.databinding.FragmentNowPlayingBinding
 
@@ -17,6 +19,7 @@ class NowPlayingFragment : Fragment() {
     private var handler = Handler(Looper.getMainLooper())
     private var updateSeekbar: Runnable? = null
     private var isServiceReady = false
+    private var currentAlbumArt: Bitmap? = null
 
     override fun onCreateView(
         inflater: LayoutInflater,
@@ -35,6 +38,7 @@ class NowPlayingFragment : Fragment() {
 
     override fun onResume() {
         super.onResume()
+
         if (!isServiceReady) {
             val service = getMusicService()
             if (service != null) {
@@ -42,11 +46,14 @@ class NowPlayingFragment : Fragment() {
             } else {
                 Handler(Looper.getMainLooper()).postDelayed({
                     val retryService = getMusicService()
-                    if (retryService != null) {
+                    if (retryService != null && !isServiceReady) {
                         onServiceReady()
                     }
-                }, 500)
+                }, 800)
             }
+        } else {
+            updateMusicInfo()
+            updateControlStates()
         }
     }
 
@@ -108,7 +115,11 @@ class NowPlayingFragment : Fragment() {
         }
 
         binding.btnFavorite.setOnClickListener {
-            // Implementar favoritos depois
+            val currentMusic = getMusicService()?.getCurrentMusic()
+            currentMusic?.let { music ->
+                val isNowFavorite = getMusicService()?.toggleFavorite(music.path) ?: false
+                updateFavoriteButton(isNowFavorite)
+            }
         }
     }
 
@@ -127,6 +138,10 @@ class NowPlayingFragment : Fragment() {
         updatePlayPauseButton()
         updateShuffleButton(getMusicService()?.isShuffling() ?: false)
         updateRepeatButton(getMusicService()?.getRepeatMode() ?: MusicService.REPEAT_NONE)
+
+        val currentMusic = getMusicService()?.getCurrentMusic()
+        val isFavorite = currentMusic?.let { getMusicService()?.isFavorite(it.path) } ?: false
+        updateFavoriteButton(isFavorite)
     }
 
     private fun updatePlayPauseButton() {
@@ -137,8 +152,9 @@ class NowPlayingFragment : Fragment() {
     }
 
     private fun updateShuffleButton(isShuffling: Boolean) {
-        val color = if (isShuffling) R.color.spotify_green else R.color.gray
-        binding.btnShuffle.setColorFilter(requireContext().getColor(color))
+        val colorRes = if (isShuffling) R.color.spotify_green else R.color.gray
+        val color = ContextCompat.getColor(requireContext(), colorRes)
+        binding.btnShuffle.setColorFilter(color)
     }
 
     private fun updateRepeatButton(repeatMode: Int) {
@@ -147,10 +163,24 @@ class NowPlayingFragment : Fragment() {
             MusicService.REPEAT_ONE -> R.drawable.ic_repeat_one
             else -> R.drawable.ic_repeat
         }
-        val color = if (repeatMode != MusicService.REPEAT_NONE) R.color.spotify_green else R.color.gray
+
+        val colorRes = if (repeatMode != MusicService.REPEAT_NONE) R.color.spotify_green else R.color.gray
+        val color = ContextCompat.getColor(requireContext(), colorRes)
 
         binding.btnRepeat.setImageResource(icon)
-        binding.btnRepeat.setColorFilter(requireContext().getColor(color))
+        binding.btnRepeat.setColorFilter(color)
+    }
+
+    private fun updateFavoriteButton(isFavorite: Boolean) {
+        val icon = if (isFavorite) R.drawable.ic_favorite_filled else R.drawable.ic_favorite
+        val color = if (isFavorite) {
+            ContextCompat.getColor(requireContext(), R.color.spotify_green)
+        } else {
+            ContextCompat.getColor(requireContext(), R.color.gray)
+        }
+
+        binding.btnFavorite.setImageResource(icon)
+        binding.btnFavorite.setColorFilter(color)
     }
 
     private fun updateMusicInfo() {
@@ -159,11 +189,41 @@ class NowPlayingFragment : Fragment() {
             binding.songTitle.text = currentMusic.title
             binding.artistName.text = currentMusic.artist
             binding.albumName.text = currentMusic.album
+
+            loadAlbumArt(currentMusic.path)
+
+            val isFavorite = getMusicService()?.isFavorite(currentMusic.path) ?: false
+            updateFavoriteButton(isFavorite)
         } else {
             binding.songTitle.text = "Nenhuma música"
             binding.artistName.text = "Selecione uma música"
             binding.albumName.text = ""
+            binding.albumArt.setImageResource(R.drawable.album_placeholder)
+            updateFavoriteButton(false)
         }
+    }
+
+    private fun loadAlbumArt(musicPath: String) {
+        Thread {
+            try {
+                val albumArt = AlbumArtExtractor.getAlbumArt(musicPath)
+                activity?.runOnUiThread {
+                    if (albumArt != null) {
+                        binding.albumArt.setImageBitmap(albumArt)
+                        currentAlbumArt = albumArt
+                    } else {
+                        binding.albumArt.setImageResource(R.drawable.album_placeholder)
+                        currentAlbumArt = null
+                    }
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+                activity?.runOnUiThread {
+                    binding.albumArt.setImageResource(R.drawable.album_placeholder)
+                    currentAlbumArt = null
+                }
+            }
+        }.start()
     }
 
     private fun startSeekbarUpdate() {
