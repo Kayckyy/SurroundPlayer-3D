@@ -3,6 +3,9 @@ package com.sonicsphere.audio
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.FragmentActivity
 import androidx.viewpager2.adapter.FragmentStateAdapter
+import com.sonicsphere.audio.fragments.FileExplorerFragment
+import com.sonicsphere.audio.fragments.NowPlayingFragment
+import com.sonicsphere.audio.fragments.SettingsFragment
 
 class ViewPagerAdapter(fa: FragmentActivity) : FragmentStateAdapter(fa) {
 

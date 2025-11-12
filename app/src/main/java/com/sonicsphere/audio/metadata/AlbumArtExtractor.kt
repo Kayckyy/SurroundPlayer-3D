@@ -1,8 +1,8 @@
-package com.sonicsphere.audio
+package com.sonicsphere.audio.metadata
 
-import android.media.MediaMetadataRetriever
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.media.MediaMetadataRetriever
 
 object AlbumArtExtractor {
 

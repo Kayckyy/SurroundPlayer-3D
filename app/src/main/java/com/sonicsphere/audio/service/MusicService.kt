@@ -1,4 +1,4 @@
-package com.sonicsphere.audio
+package com.sonicsphere.audio.service
 
 import android.app.Notification
 import android.app.NotificationChannel
@@ -10,14 +10,19 @@ import android.content.Intent
 import android.content.SharedPreferences
 import android.graphics.BitmapFactory
 import android.media.MediaPlayer
-import android.media.audiofx.Equalizer
 import android.media.audiofx.BassBoost
+import android.media.audiofx.Equalizer
 import android.os.Binder
 import android.os.Build
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
 import androidx.core.app.NotificationCompat
+import com.sonicsphere.audio.metadata.AlbumArtExtractor
+import com.sonicsphere.audio.MainActivity
+import com.sonicsphere.audio.metadata.Music
+import com.sonicsphere.audio.R
+import com.sonicsphere.audio.effects.HaasEffect
 import java.io.File
 
 class MusicService : Service() {
@@ -29,7 +34,8 @@ class MusicService : Service() {
     // EFEITOS DE ÁUDIO
     private var equalizer: Equalizer? = null
     private var bassBoost: BassBoost? = null
-    private var haasEffect: HaasEffect? = null
+    private var audioDecoder: AudioDecoder? = null
+    private var oboeEngine: OboeAudioEngine? = null
 
     private var currentMusicIndex = 0
     private var musicList: MutableList<Music> = mutableListOf()
@@ -77,6 +83,7 @@ class MusicService : Service() {
         private const val KEY_BASS_BOOST_ENABLED = "bass_boost_enabled"
         private const val KEY_BASS_BOOST_STRENGTH = "bass_boost_strength"
         private const val KEY_HAAS_MODE = "haas_mode"
+        private const val KEY_HAAS_DELAY = "haas_delay_ms"
     }
 
     inner class MusicBinder : Binder() {
@@ -88,7 +95,7 @@ class MusicService : Service() {
     override fun onCreate() {
         super.onCreate()
         instance = this
-        prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
 
         prefs.edit().putBoolean(KEY_SERVICE_RUNNING, true).apply()
 
@@ -107,7 +114,9 @@ class MusicService : Service() {
         }
 
         startNotificationUpdate()
-
+        audioDecoder = AudioDecoder()
+        oboeEngine = OboeAudioEngine()
+        oboeEngine?.start()
         restoreState()
     }
 
@@ -163,7 +172,6 @@ class MusicService : Service() {
                 setSound(null, null)
             }
             val manager = getSystemService(NotificationManager::class.java)
-            manager.createNotificationChannel(channel)
         }
     }
 
@@ -172,7 +180,7 @@ class MusicService : Service() {
 
         val currentMusic = getCurrentMusic()
         val notification = createNotification(currentMusic)
-        val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        val notificationManager = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
 
         if (shouldStartForeground()) {
             startForeground(notificationId, notification)
@@ -398,43 +406,29 @@ class MusicService : Service() {
     }
 
     fun playMusic(index: Int) {
-        if (index in musicList.indices) {
-            currentMusicIndex = index
-            val music = musicList[index]
+        if (index !in musicList.indices) return
 
-            mediaPlayer?.reset()
-            isPrepared = false
+        currentMusicIndex = index
+        val music = musicList[index]
 
-            try {
-                mediaPlayer?.setDataSource(music.path)
-                mediaPlayer?.prepareAsync()
+        // Decodificar e carregar no Oboe
+        Thread {
+            val decoded = audioDecoder?.decodeAudio(music.path)
+            if (decoded != null) {
+                oboeEngine?.loadAudio(decoded.pcmData, decoded.sampleRate, decoded.channelCount)
+                oboeEngine?.play()
 
-                mediaPlayer?.setOnPreparedListener {
-                    isPrepared = true
-
-                    // CARREGAR METADADOS EM BACKGROUND
-                    Thread {
-                        val metadata = AlbumArtExtractor.getMetadata(music.path)
-                        if (metadata != null) {
-                            // ATUALIZAR A MÚSICA NA LISTA COM OS METADADOS REAIS
-                            musicList[currentMusicIndex] = musicList[currentMusicIndex].copy(
-                                title = metadata.title ?: musicList[currentMusicIndex].title,
-                                artist = metadata.artist ?: "Artista Desconhecido",
-                                album = metadata.album ?: musicList[currentMusicIndex].album,
-                                duration = metadata.duration
-                            )
-                        }
-                    }.start()
-
-                    initializeAudioEffects()
-                    restorePlaybackPosition()
-                    saveState()
+                // Aplicar Haas
+                val haasDelay = getHaasDelay()
+                if (haasDelay > 0) {
+                    oboeEngine?.setHaasDelay(haasDelay)
+                    oboeEngine?.enableHaas(true)
                 }
-
-            } catch (e: Exception) {
-                e.printStackTrace()
             }
-        }
+        }.start()
+
+        updateNotification()
+        saveState()
     }
 
     fun playCurrentMusic() {
@@ -444,14 +438,14 @@ class MusicService : Service() {
     }
 
     fun pauseMusic() {
-        mediaPlayer?.pause()
+        oboeEngine?.pause()
         updateNotification()
         saveState()
     }
 
     fun resumeMusic() {
         if (isPrepared) {
-            mediaPlayer?.start()
+            oboeEngine?.start()
             updateNotification()
         } else if (musicList.isNotEmpty()) {
             playCurrentMusic()
@@ -568,11 +562,6 @@ class MusicService : Service() {
                 enabled = savedEnabled
             }
 
-            // Criar Haas Effect
-            haasEffect = HaasEffect(audioSessionId).apply {
-                val savedMode = prefs.getInt(KEY_HAAS_MODE, HaasEffect.HAAS_OFF)
-                setHaasMode(savedMode)
-            }
 
         } catch (e: Exception) {
             e.printStackTrace()
@@ -587,8 +576,6 @@ class MusicService : Service() {
             bassBoost?.release()
             bassBoost = null
 
-            haasEffect?.release()
-            haasEffect = null
 
         } catch (e: Exception) {
             e.printStackTrace()
@@ -647,20 +634,6 @@ class MusicService : Service() {
             e.printStackTrace()
         }
     }
-
-    // Funções públicas para controlar o Haas Effect (3D Simples)
-    fun getHaasMode(): Int = haasEffect?.getCurrentMode() ?: HaasEffect.HAAS_OFF
-
-    fun setHaasMode(mode: Int) {
-        try {
-            haasEffect?.setHaasMode(mode)
-            prefs.edit().putInt(KEY_HAAS_MODE, mode).apply()
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
-    }
-
-    fun isHaasEnabled(): Boolean = haasEffect?.isEnabled() ?: false
 
     // ==================== FIM DAS FUNÇÕES DE EFEITOS ====================
 
@@ -739,6 +712,20 @@ class MusicService : Service() {
         return prefs.getString(KEY_CURRENT_PATH, "") ?: ""
     }
 
+    fun getHaasDelay(): Int {
+        return prefs.getInt(KEY_HAAS_DELAY, 0)
+    }
+
+    fun setHaasDelay(delayMs: Int) {
+        try {
+            // TODO: Chamar OboeAudioEngine quando integrar
+            oboeEngine?.setHaasDelay(delayMs)
+            prefs.edit().putInt(KEY_HAAS_DELAY, delayMs).apply()
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
     private fun restoreState() {
         currentMusicIndex = prefs.getInt(KEY_CURRENT_INDEX, 0)
         isShuffling = prefs.getBoolean(KEY_SHUFFLE, false)
@@ -760,6 +747,7 @@ class MusicService : Service() {
         handler.removeCallbacks(saveStateRunnable)
         stopNotificationUpdate() // ADICIONAR ESTA LINHA
         releaseAudioEffects()
+        oboeEngine?.destroy()
         instance = null
         mediaPlayer?.release()
     }

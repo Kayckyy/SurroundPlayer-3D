@@ -9,16 +9,41 @@ android {
 
     defaultConfig {
         applicationId "com.sonicsphere.audio"
-        minSdk 21
+        minSdk 24  // Oboe requer mínimo API 24
         targetSdk 34
         versionCode 1
         versionName "1.0"
+
+        // CONFIGURAÇÃO DO NDK PARA OBOE
+        externalNativeBuild {
+            cmake {
+                cppFlags "-std=c++17 -frtti -fexceptions"
+                arguments "-DANDROID_STL=c++_shared"
+            }
+        }
+
+        // ABIs suportadas (pode remover as que não precisar para reduzir tamanho do APK)
+        ndk {
+            abiFilters 'armeabi-v7a', 'arm64-v8a', 'x86', 'x86_64'
+        }
     }
 
     buildTypes {
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+
+            // Configurações adicionais para release
+            ndk {
+                debugSymbolLevel 'FULL'
+            }
+        }
+
+        debug {
+            // Para debug, pode reduzir ABIs para compilar mais rápido
+            ndk {
+                abiFilters 'arm64-v8a', 'x86_64'
+            }
         }
     }
 
@@ -34,18 +59,59 @@ android {
     buildFeatures {
         viewBinding true
     }
+
+    // CONFIGURAÇÃO DO CMAKE PARA COMPILAR C++
+    externalNativeBuild {
+        cmake {
+            path file('src/main/cpp/CMakeLists.txt')
+            version '3.22.1'
+        }
+    }
+
+    // Configurações de empacotamento
+    packagingOptions {
+        // Evitar duplicação de bibliotecas nativas
+        pickFirst 'lib/armeabi-v7a/libc++_shared.so'
+        pickFirst 'lib/arm64-v8a/libc++_shared.so'
+        pickFirst 'lib/x86/libc++_shared.so'
+        pickFirst 'lib/x86_64/libc++_shared.so'
+    }
+    ndkVersion '29.0.14206865'
 }
 
 dependencies {
+    // Core Android
     implementation 'androidx.core:core-ktx:1.12.0'
     implementation 'androidx.appcompat:appcompat:1.6.1'
-    implementation 'com.google.android.material:material:1.10.0'
+    implementation 'com.google.android.material:material:1.11.0'
     implementation 'androidx.constraintlayout:constraintlayout:2.1.4'
+
+    // Media & Audio
     implementation 'androidx.media:media:1.7.0'
+    implementation 'androidx.media3:media3-session:1.2.1'
+
+    // Fragments & ViewPager
     implementation 'androidx.fragment:fragment-ktx:1.6.2'
     implementation 'androidx.viewpager2:viewpager2:1.0.0'
-    implementation 'com.github.bumptech.glide:glide:4.16.0'
+
+    // Lifecycle
     implementation 'androidx.lifecycle:lifecycle-viewmodel-ktx:2.7.0'
     implementation 'androidx.lifecycle:lifecycle-livedata-ktx:2.7.0'
-    implementation 'androidx.media3:media3-session:1.1.1'
+    implementation 'androidx.lifecycle:lifecycle-runtime-ktx:2.7.0'
+
+    // Image Loading
+    implementation 'com.github.bumptech.glide:glide:4.16.0'
+    annotationProcessor 'com.github.bumptech.glide:compiler:4.16.0'
+
+    // Coroutines (útil para processamento assíncrono)
+    implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3'
+
+    // OBOE - Áudio de baixa latência
+    // Nota: Oboe será compilado via CMake, não precisa dependência Gradle
+    // A biblioteca será linkada no CMakeLists.txt
+
+    // Testing
+    testImplementation 'junit:junit:4.13.2'
+    androidTestImplementation 'androidx.test.ext:junit:1.1.5'
+    androidTestImplementation 'androidx.test.espresso:espresso-core:3.5.1'
 }

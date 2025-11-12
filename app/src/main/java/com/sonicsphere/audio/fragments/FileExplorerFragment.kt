@@ -1,4 +1,4 @@
-package com.sonicsphere.audio
+package com.sonicsphere.audio.fragments
 
 import android.os.Bundle
 import android.os.Environment
@@ -10,6 +10,9 @@ import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
+import com.sonicsphere.audio.MainActivity
+import com.sonicsphere.audio.service.MusicService
+import com.sonicsphere.audio.R
 import com.sonicsphere.audio.databinding.FragmentPlaylistBinding
 import com.sonicsphere.audio.databinding.ItemFileBinding
 import java.io.File
@@ -96,7 +99,7 @@ class FileExplorerFragment : Fragment() {
     }
 
     private fun getMusicService(): MusicService? {
-        return (requireActivity() as? MainActivity)?.getMusicService() ?: MusicService.getInstance()
+        return (requireActivity() as? MainActivity)?.getMusicService() ?: MusicService.Companion.getInstance()
     }
 
     override fun onDestroyView() {

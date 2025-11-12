@@ -1,4 +1,4 @@
-package com.sonicsphere.audio
+package com.sonicsphere.audio.effects
 
 import android.media.audiofx.Virtualizer
 

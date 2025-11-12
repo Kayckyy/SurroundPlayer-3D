@@ -1,4 +1,4 @@
-package com.sonicsphere.audio
+package com.sonicsphere.audio.fragments
 
 import android.graphics.Bitmap
 import android.os.Bundle
@@ -10,6 +10,10 @@ import android.view.ViewGroup
 import android.widget.SeekBar
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
+import com.sonicsphere.audio.metadata.AlbumArtExtractor
+import com.sonicsphere.audio.MainActivity
+import com.sonicsphere.audio.service.MusicService
+import com.sonicsphere.audio.R
 import com.sonicsphere.audio.databinding.FragmentNowPlayingBinding
 
 class NowPlayingFragment : Fragment() {
@@ -111,7 +115,7 @@ class NowPlayingFragment : Fragment() {
         }
 
         binding.btnRepeat.setOnClickListener {
-            val repeatMode = getMusicService()?.toggleRepeat() ?: MusicService.REPEAT_NONE
+            val repeatMode = getMusicService()?.toggleRepeat() ?: MusicService.Companion.REPEAT_NONE
             updateRepeatButton(repeatMode)
         }
 
@@ -138,7 +142,7 @@ class NowPlayingFragment : Fragment() {
     private fun updateControlStates() {
         updatePlayPauseButton()
         updateShuffleButton(getMusicService()?.isShuffling() ?: false)
-        updateRepeatButton(getMusicService()?.getRepeatMode() ?: MusicService.REPEAT_NONE)
+        updateRepeatButton(getMusicService()?.getRepeatMode() ?: MusicService.Companion.REPEAT_NONE)
 
         val currentMusic = getMusicService()?.getCurrentMusic()
         val isFavorite = currentMusic?.let { getMusicService()?.isFavorite(it.path) } ?: false
@@ -160,12 +164,12 @@ class NowPlayingFragment : Fragment() {
 
     private fun updateRepeatButton(repeatMode: Int) {
         val icon = when (repeatMode) {
-            MusicService.REPEAT_ALL -> R.drawable.ic_repeat_all
-            MusicService.REPEAT_ONE -> R.drawable.ic_repeat_one
+            MusicService.Companion.REPEAT_ALL -> R.drawable.ic_repeat_all
+            MusicService.Companion.REPEAT_ONE -> R.drawable.ic_repeat_one
             else -> R.drawable.ic_repeat
         }
 
-        val colorRes = if (repeatMode != MusicService.REPEAT_NONE) R.color.spotify_green else R.color.gray
+        val colorRes = if (repeatMode != MusicService.Companion.REPEAT_NONE) R.color.spotify_green else R.color.gray
         val color = ContextCompat.getColor(requireContext(), colorRes)
 
         binding.btnRepeat.setImageResource(icon)
@@ -278,7 +282,7 @@ class NowPlayingFragment : Fragment() {
     }
 
     private fun getMusicService(): MusicService? {
-        return (requireActivity() as? MainActivity)?.getMusicService() ?: MusicService.getInstance()
+        return (requireActivity() as? MainActivity)?.getMusicService() ?: MusicService.Companion.getInstance()
     }
 
     override fun onDestroyView() {

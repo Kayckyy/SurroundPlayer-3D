@@ -1,4 +1,4 @@
-package com.sonicsphere.audio
+package com.sonicsphere.audio.metadata
 
 data class Music(
     val id: Long,

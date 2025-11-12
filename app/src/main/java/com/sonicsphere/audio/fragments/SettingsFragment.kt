@@ -1,4 +1,4 @@
-package com.sonicsphere.audio
+package com.sonicsphere.audio.fragments
 
 import android.os.Bundle
 import android.os.Handler
@@ -9,6 +9,7 @@ import android.view.ViewGroup
 import android.widget.SeekBar
 import androidx.fragment.app.Fragment
 import com.sonicsphere.audio.databinding.FragmentSettingsBinding
+import com.sonicsphere.audio.service.MusicService
 
 class SettingsFragment : Fragment() {
 
@@ -100,15 +101,15 @@ class SettingsFragment : Fragment() {
             override fun onStopTrackingTouch(seekBar: SeekBar?) {}
         })
 
-        // Haas Effect (3D Simples)
+        // Haas Effect (3D Simples) - ATUALIZADO PARA OBOE
         binding.radioGroupHaas.setOnCheckedChangeListener { _, checkedId ->
-            val mode = when (checkedId) {
-                R.id.radioHaasShort -> HaasEffect.HAAS_SHORT
-                R.id.radioHaasMedium -> HaasEffect.HAAS_MEDIUM
-                R.id.radioHaasLong -> HaasEffect.HAAS_LONG
-                else -> HaasEffect.HAAS_OFF
+            val delayMs = when (checkedId) {
+                binding.radioHaasShort.id -> 200
+                binding.radioHaasMedium.id -> 300
+                binding.radioHaasLong.id -> 400
+                else -> 0
             }
-            getMusicService()?.setHaasMode(mode)
+            getMusicService()?.setHaasDelay(delayMs)
         }
 
         updateUIFromService()
@@ -127,11 +128,15 @@ class SettingsFragment : Fragment() {
         binding.equalizerBandsContainer.removeAllViews()
 
         for (band in 0 until numberOfBands.toInt()) {
-            val bandView = layoutInflater.inflate(R.layout.item_equalizer_band, binding.equalizerBandsContainer, false)
+            val bandView = layoutInflater.inflate(
+                com.sonicsphere.audio.R.layout.item_equalizer_band,
+                binding.equalizerBandsContainer,
+                false
+            )
 
-            val bandLabel = bandView.findViewById<android.widget.TextView>(R.id.bandLabel)
-            val bandSeekBar = bandView.findViewById<SeekBar>(R.id.bandSeekBar)
-            val bandValue = bandView.findViewById<android.widget.TextView>(R.id.bandValue)
+            val bandLabel = bandView.findViewById<android.widget.TextView>(com.sonicsphere.audio.R.id.bandLabel)
+            val bandSeekBar = bandView.findViewById<SeekBar>(com.sonicsphere.audio.R.id.bandSeekBar)
+            val bandValue = bandView.findViewById<android.widget.TextView>(com.sonicsphere.audio.R.id.bandValue)
 
             val centerFreq = service.getEqualizerCenterFreq(band.toShort()) ?: 0
             val freqText = if (centerFreq >= 1000) {
@@ -188,12 +193,12 @@ class SettingsFragment : Fragment() {
         binding.seekBarBassBoost.progress = bassStrength
         binding.textBassBoostValue.text = "${bassStrength / 10}%"
 
-        // Atualizar Haas Effect
-        val haasMode = service.getHaasMode()
-        when (haasMode) {
-            HaasEffect.HAAS_SHORT -> binding.radioHaasShort.isChecked = true
-            HaasEffect.HAAS_MEDIUM -> binding.radioHaasMedium.isChecked = true
-            HaasEffect.HAAS_LONG -> binding.radioHaasLong.isChecked = true
+        // Atualizar Haas Effect - SIMPLIFICADO
+        val haasDelay = service.getHaasDelay()
+        when (haasDelay) {
+            200 -> binding.radioHaasShort.isChecked = true
+            300 -> binding.radioHaasMedium.isChecked = true
+            400 -> binding.radioHaasLong.isChecked = true
             else -> binding.radioHaasOff.isChecked = true
         }
     }
@@ -207,7 +212,8 @@ class SettingsFragment : Fragment() {
     }
 
     private fun getMusicService(): MusicService? {
-        return (requireActivity() as? MainActivity)?.getMusicService() ?: MusicService.getInstance()
+        return (requireActivity() as? com.sonicsphere.audio.MainActivity)?.getMusicService()
+            ?: MusicService.getInstance()
     }
 
     override fun onDestroyView() {

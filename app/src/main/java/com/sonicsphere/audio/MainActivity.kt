@@ -17,6 +17,9 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import com.sonicsphere.audio.databinding.ActivityMainBinding
 import com.google.android.material.tabs.TabLayoutMediator
+import com.sonicsphere.audio.fragments.FileExplorerFragment
+import com.sonicsphere.audio.fragments.NowPlayingFragment
+import com.sonicsphere.audio.service.MusicService
 
 class MainActivity : AppCompatActivity() {
 
