@@ -1,4 +1,4 @@
-package com.example.musicplayer
+package com.sonicsphere.audio
 
 data class Music(
     val id: Long,

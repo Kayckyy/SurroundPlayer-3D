@@ -1,4 +1,4 @@
-package com.example.musicplayer
+package com.sonicsphere.audio
 
 import android.Manifest
 import android.content.ComponentName
@@ -15,7 +15,7 @@ import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
-import com.example.musicplayer.databinding.ActivityMainBinding
+import com.sonicsphere.audio.databinding.ActivityMainBinding
 import com.google.android.material.tabs.TabLayoutMediator
 
 class MainActivity : AppCompatActivity() {

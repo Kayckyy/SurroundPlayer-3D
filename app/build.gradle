@@ -4,11 +4,11 @@ plugins {
 }
 
 android {
-    namespace 'com.example.musicplayer'
+    namespace 'com.sonicsphere.audio'
     compileSdk 34
 
     defaultConfig {
-        applicationId "com.example.musicplayer"
+        applicationId "com.sonicsphere.audio"
         minSdk 21
         targetSdk 34
         versionCode 1

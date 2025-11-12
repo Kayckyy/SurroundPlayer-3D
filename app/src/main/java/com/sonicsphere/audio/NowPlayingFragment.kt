@@ -1,4 +1,4 @@
-package com.example.musicplayer
+package com.sonicsphere.audio
 
 import android.graphics.Bitmap
 import android.os.Bundle
@@ -10,7 +10,7 @@ import android.view.ViewGroup
 import android.widget.SeekBar
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
-import com.example.musicplayer.databinding.FragmentNowPlayingBinding
+import com.sonicsphere.audio.databinding.FragmentNowPlayingBinding
 
 class NowPlayingFragment : Fragment() {
 
@@ -20,6 +20,7 @@ class NowPlayingFragment : Fragment() {
     private var updateSeekbar: Runnable? = null
     private var isServiceReady = false
     private var currentAlbumArt: Bitmap? = null
+    private var lastMusicPath: String? = null
 
     override fun onCreateView(
         inflater: LayoutInflater,
@@ -190,7 +191,11 @@ class NowPlayingFragment : Fragment() {
             binding.artistName.text = currentMusic.artist
             binding.albumName.text = currentMusic.album
 
-            loadAlbumArt(currentMusic.path)
+            // Só recarregar se mudou de música
+            if (lastMusicPath != currentMusic.path) {
+                lastMusicPath = currentMusic.path
+                loadMetadataAndAlbumArt(currentMusic.path)
+            }
 
             val isFavorite = getMusicService()?.isFavorite(currentMusic.path) ?: false
             updateFavoriteButton(isFavorite)
@@ -200,17 +205,29 @@ class NowPlayingFragment : Fragment() {
             binding.albumName.text = ""
             binding.albumArt.setImageResource(R.drawable.album_placeholder)
             updateFavoriteButton(false)
+            lastMusicPath = null
         }
     }
 
-    private fun loadAlbumArt(musicPath: String) {
+    private fun loadMetadataAndAlbumArt(musicPath: String) {
         Thread {
             try {
-                val albumArt = AlbumArtExtractor.getAlbumArt(musicPath)
+                val metadata = AlbumArtExtractor.getMetadata(musicPath)
                 activity?.runOnUiThread {
-                    if (albumArt != null) {
-                        binding.albumArt.setImageBitmap(albumArt)
-                        currentAlbumArt = albumArt
+                    if (metadata != null) {
+                        // Atualizar com metadados reais
+                        binding.songTitle.text = metadata.title ?: binding.songTitle.text
+                        binding.artistName.text = metadata.artist ?: binding.artistName.text
+                        binding.albumName.text = metadata.album ?: binding.albumName.text
+
+                        // Atualizar capa do álbum
+                        if (metadata.albumArt != null) {
+                            binding.albumArt.setImageBitmap(metadata.albumArt)
+                            currentAlbumArt = metadata.albumArt
+                        } else {
+                            binding.albumArt.setImageResource(R.drawable.album_placeholder)
+                            currentAlbumArt = null
+                        }
                     } else {
                         binding.albumArt.setImageResource(R.drawable.album_placeholder)
                         currentAlbumArt = null
@@ -251,7 +268,6 @@ class NowPlayingFragment : Fragment() {
         binding.totalTime.text = formatTime(duration)
 
         updatePlayPauseButton()
-        updateMusicInfo()
     }
 
     private fun formatTime(milliseconds: Int): String {

@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:padding="8dp">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical">
+
+        <TextView
+            android:id="@+id/bandLabel"
+            android:layout_width="60dp"
+            android:layout_height="wrap_content"
+            android:text="60Hz"
+            android:textColor="@color/white"
+            android:textSize="12sp"
+            android:gravity="center" />
+
+        <SeekBar
+            android:id="@+id/bandSeekBar"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:layout_marginStart="8dp"
+            android:layout_marginEnd="8dp"
+            android:progressTint="@color/spotify_green"
+            android:thumbTint="@color/spotify_green" />
+
+        <TextView
+            android:id="@+id/bandValue"
+            android:layout_width="50dp"
+            android:layout_height="wrap_content"
+            android:text="0dB"
+            android:textColor="@color/spotify_green"
+            android:textSize="12sp"
+            android:gravity="center"
+            android:textStyle="bold" />
+
+    </LinearLayout>
+
+</LinearLayout>

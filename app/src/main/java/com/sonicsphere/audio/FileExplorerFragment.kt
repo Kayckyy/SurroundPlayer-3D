@@ -1,4 +1,4 @@
-package com.example.musicplayer
+package com.sonicsphere.audio
 
 import android.os.Bundle
 import android.os.Environment
@@ -10,8 +10,8 @@ import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
-import com.example.musicplayer.databinding.FragmentPlaylistBinding
-import com.example.musicplayer.databinding.ItemFileBinding
+import com.sonicsphere.audio.databinding.FragmentPlaylistBinding
+import com.sonicsphere.audio.databinding.ItemFileBinding
 import java.io.File
 
 class FileExplorerFragment : Fragment() {
@@ -19,7 +19,7 @@ class FileExplorerFragment : Fragment() {
     private var _binding: FragmentPlaylistBinding? = null
     private val binding get() = _binding!!
     private var currentPath: String = Environment.getExternalStorageDirectory().absolutePath
-    private val musicExtensions = setOf("mp3", "wav", "ogg", "m4a", "flac", "aac")
+    private val musicExtensions = setOf("mp3", "wav", "ogg", "m4a", "flac", "aac", "opus")
     private var isServiceReady = false
 
     override fun onCreateView(

@@ -1,4 +1,4 @@
-package com.example.musicplayer
+package com.sonicsphere.audio
 
 import android.app.Notification
 import android.app.NotificationChannel
@@ -10,6 +10,8 @@ import android.content.Intent
 import android.content.SharedPreferences
 import android.graphics.BitmapFactory
 import android.media.MediaPlayer
+import android.media.audiofx.Equalizer
+import android.media.audiofx.BassBoost
 import android.os.Binder
 import android.os.Build
 import android.os.Handler
@@ -21,7 +23,14 @@ import java.io.File
 class MusicService : Service() {
 
     private val binder = MusicBinder()
+    private var notificationUpdateRunnable: Runnable? = null
     private var mediaPlayer: MediaPlayer? = null
+
+    // EFEITOS DE ÁUDIO
+    private var equalizer: Equalizer? = null
+    private var bassBoost: BassBoost? = null
+    private var haasEffect: HaasEffect? = null
+
     private var currentMusicIndex = 0
     private var musicList: MutableList<Music> = mutableListOf()
     private var isPrepared = false
@@ -61,6 +70,13 @@ class MusicService : Service() {
         private const val KEY_LAST_MUSIC_PATH = "last_music_path"
         private const val KEY_FAVORITES = "favorite_musics"
         private const val KEY_SERVICE_RUNNING = "service_running"
+
+        // CHAVES PARA EFEITOS DE ÁUDIO
+        private const val KEY_EQUALIZER_ENABLED = "equalizer_enabled"
+        private const val KEY_EQUALIZER_BANDS = "equalizer_bands_"
+        private const val KEY_BASS_BOOST_ENABLED = "bass_boost_enabled"
+        private const val KEY_BASS_BOOST_STRENGTH = "bass_boost_strength"
+        private const val KEY_HAAS_MODE = "haas_mode"
     }
 
     inner class MusicBinder : Binder() {
@@ -74,7 +90,6 @@ class MusicService : Service() {
         instance = this
         prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
-        // MARCAR SERVICE COMO EXECUTANDO
         prefs.edit().putBoolean(KEY_SERVICE_RUNNING, true).apply()
 
         mediaPlayer = MediaPlayer().apply {
@@ -87,10 +102,11 @@ class MusicService : Service() {
         }
         createNotificationChannel()
 
-        // SÓ INICIAR FOREGROUND SE HOUVER MÚSICA TOCANDO
         if (shouldStartForeground()) {
             startForegroundService()
         }
+
+        startNotificationUpdate()
 
         restoreState()
     }
@@ -104,29 +120,26 @@ class MusicService : Service() {
                 ACTION_PREVIOUS -> playPrevious()
                 ACTION_STOP -> {
                     stopMusicCompletely()
-                    return START_NOT_STICKY // NÃO REINICIAR APÓS STOP
+                    return START_NOT_STICKY
                 }
                 ACTION_TOGGLE_SHUFFLE -> toggleShuffle()
                 ACTION_TOGGLE_REPEAT -> toggleRepeat()
             }
         }
 
-        // SE NÃO HOUVER AÇÃO ESPECÍFICA, VERIFICAR SE PRECISA RESTAURAR
         if (intent?.action == null && shouldRestorePlayback()) {
             restorePlaybackState()
         }
 
-        return START_NOT_STICKY // IMPEDIR REINICIAÇÃO AUTOMÁTICA
+        return START_NOT_STICKY
     }
 
-    // VERIFICAR SE DEVE INICIAR EM FOREGROUND
     private fun shouldStartForeground(): Boolean {
         val wasPlaying = prefs.getBoolean(KEY_IS_PLAYING, false)
         val hasMusicPath = prefs.getString(KEY_LAST_MUSIC_PATH, "")?.isNotEmpty() == true
         return wasPlaying && hasMusicPath
     }
 
-    // VERIFICAR SE DEVE RESTAURAR REPRODUÇÃO
     private fun shouldRestorePlayback(): Boolean {
         val wasPlaying = prefs.getBoolean(KEY_IS_PLAYING, false)
         val hasMusicPath = prefs.getString(KEY_LAST_MUSIC_PATH, "")?.isNotEmpty() == true
@@ -155,7 +168,6 @@ class MusicService : Service() {
     }
 
     private fun updateNotification() {
-        // SÓ ATUALIZAR NOTIFICAÇÃO SE ESTIVER EM FOREGROUND
         if (isServiceStopping) return
 
         val currentMusic = getCurrentMusic()
@@ -244,6 +256,15 @@ class MusicService : Service() {
             "Pausado"
         }
 
+        // Calcular progresso da música
+        val duration = getDuration()
+        val position = getCurrentPosition()
+        val progress = if (duration > 0) {
+            ((position.toFloat() / duration.toFloat()) * 100).toInt()
+        } else {
+            0
+        }
+
         val notificationBuilder = NotificationCompat.Builder(this, channelId)
             .setContentTitle(music?.title ?: "Music Player")
             .setContentText(contentText)
@@ -253,6 +274,9 @@ class MusicService : Service() {
             .setOngoing(true)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .setOnlyAlertOnce(true)
+            .setShowWhen(false)
+            // ADICIONAR BARRA DE PROGRESSO
+            .setProgress(100, progress, false)
             .addAction(R.drawable.ic_skip_previous, "Anterior", previousPendingIntent)
             .addAction(playPauseIcon, if (isPlaying()) "Pausar" else "Tocar", playPausePendingIntent)
             .addAction(R.drawable.ic_skip_next, "Próxima", nextPendingIntent)
@@ -272,7 +296,27 @@ class MusicService : Service() {
         return notificationBuilder.build()
     }
 
-    // RESTAURAR ESTADO DE REPRODUÇÃO
+    private fun startNotificationUpdate() {
+        stopNotificationUpdate() // Para qualquer atualização anterior
+
+        notificationUpdateRunnable = object : Runnable {
+            override fun run() {
+                if (!isServiceStopping && hasMusic()) {
+                    updateNotification()
+                    handler.postDelayed(this, 1000) // Atualizar a cada 1 segundo
+                }
+            }
+        }
+        handler.post(notificationUpdateRunnable!!)
+    }
+
+    private fun stopNotificationUpdate() {
+        notificationUpdateRunnable?.let {
+            handler.removeCallbacks(it)
+            notificationUpdateRunnable = null
+        }
+    }
+
     private fun restorePlaybackState() {
         val lastMusicPath = prefs.getString(KEY_LAST_MUSIC_PATH, "")
         val lastPosition = prefs.getInt(KEY_LAST_POSITION, 0)
@@ -283,7 +327,6 @@ class MusicService : Service() {
             if (file.exists()) {
                 playMusicFile(lastMusicPath)
 
-                // Restaurar posição após preparar
                 handler.postDelayed({
                     if (lastPosition > 0 && lastPosition < (getDuration() - 5000)) {
                         seekTo(lastPosition)
@@ -296,7 +339,6 @@ class MusicService : Service() {
         }
     }
 
-    // RESTAURAR POSIÇÃO APÓS PREPARAR
     private fun restorePlaybackPosition() {
         val lastPosition = prefs.getInt(KEY_LAST_POSITION, 0)
         val lastMusicPath = prefs.getString(KEY_LAST_MUSIC_PATH, "")
@@ -308,7 +350,6 @@ class MusicService : Service() {
             }, 100)
         }
 
-        // SEMPRE INICIAR REPRODUÇÃO PARA NOVAS MÚSICAS
         mediaPlayer?.start()
         updateNotification()
     }
@@ -316,7 +357,7 @@ class MusicService : Service() {
     fun loadMusicFilesFromFolder(folderPath: String) {
         musicList.clear()
         val folder = File(folderPath)
-        val musicExtensions = setOf("mp3", "wav", "ogg", "m4a", "flac", "aac")
+        val musicExtensions = setOf("mp3", "wav", "ogg", "m4a", "flac", "aac", "opus")
 
         if (folder.exists() && folder.isDirectory) {
             folder.listFiles()?.sortedBy { it.name }?.forEach { file ->
@@ -324,6 +365,7 @@ class MusicService : Service() {
                     val extension = file.extension.lowercase()
                     if (musicExtensions.contains(extension)) {
                         val isFavorite = isFavorite(file.absolutePath)
+
                         val music = Music(
                             id = System.currentTimeMillis() + musicList.size,
                             title = file.nameWithoutExtension,
@@ -369,6 +411,22 @@ class MusicService : Service() {
 
                 mediaPlayer?.setOnPreparedListener {
                     isPrepared = true
+
+                    // CARREGAR METADADOS EM BACKGROUND
+                    Thread {
+                        val metadata = AlbumArtExtractor.getMetadata(music.path)
+                        if (metadata != null) {
+                            // ATUALIZAR A MÚSICA NA LISTA COM OS METADADOS REAIS
+                            musicList[currentMusicIndex] = musicList[currentMusicIndex].copy(
+                                title = metadata.title ?: musicList[currentMusicIndex].title,
+                                artist = metadata.artist ?: "Artista Desconhecido",
+                                album = metadata.album ?: musicList[currentMusicIndex].album,
+                                duration = metadata.duration
+                            )
+                        }
+                    }.start()
+
+                    initializeAudioEffects()
                     restorePlaybackPosition()
                     saveState()
                 }
@@ -401,7 +459,6 @@ class MusicService : Service() {
         saveState()
     }
 
-    // PARAR COMPLETAMENTE (SEM REINICIAR)
     fun stopMusicCompletely() {
         isServiceStopping = true
         saveState()
@@ -410,15 +467,15 @@ class MusicService : Service() {
         mediaPlayer?.reset()
         isPrepared = false
 
+        releaseAudioEffects()
+
         stopForeground(true)
         stopSelf()
 
-        // MARCAR SERVICE COMO PARADO
         prefs.edit().putBoolean(KEY_SERVICE_RUNNING, false).apply()
         instance = null
     }
 
-    // MANTIDO PARA COMPATIBILIDADE
     fun stopMusic() {
         stopMusicCompletely()
     }
@@ -479,7 +536,134 @@ class MusicService : Service() {
         }
     }
 
-    // GETTERS
+    // ==================== FUNÇÕES DE EFEITOS DE ÁUDIO ====================
+
+    private fun initializeAudioEffects() {
+        try {
+            releaseAudioEffects()
+
+            val audioSessionId = mediaPlayer?.audioSessionId ?: return
+
+            // Criar Equalizer
+            equalizer = Equalizer(0, audioSessionId).apply {
+                enabled = prefs.getBoolean(KEY_EQUALIZER_ENABLED, false)
+
+                val numberOfBands = this.numberOfBands
+                for (band in 0 until numberOfBands.toInt()) {
+                    val savedLevel = prefs.getInt("${KEY_EQUALIZER_BANDS}$band", 0)
+                    try {
+                        setBandLevel(band.toShort(), savedLevel.toShort())
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                    }
+                }
+            }
+
+            // Criar Bass Boost
+            bassBoost = BassBoost(0, audioSessionId).apply {
+                val savedEnabled = prefs.getBoolean(KEY_BASS_BOOST_ENABLED, false)
+                val savedStrength = prefs.getInt(KEY_BASS_BOOST_STRENGTH, 0)
+                val limitedStrength = savedStrength.coerceIn(0, 500)
+                setStrength(limitedStrength.toShort())
+                enabled = savedEnabled
+            }
+
+            // Criar Haas Effect
+            haasEffect = HaasEffect(audioSessionId).apply {
+                val savedMode = prefs.getInt(KEY_HAAS_MODE, HaasEffect.HAAS_OFF)
+                setHaasMode(savedMode)
+            }
+
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    private fun releaseAudioEffects() {
+        try {
+            equalizer?.release()
+            equalizer = null
+
+            bassBoost?.release()
+            bassBoost = null
+
+            haasEffect?.release()
+            haasEffect = null
+
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    // Funções públicas para controlar o Equalizer
+    fun isEqualizerEnabled(): Boolean = equalizer?.enabled ?: false
+
+    fun setEqualizerEnabled(enabled: Boolean) {
+        try {
+            equalizer?.enabled = enabled
+            prefs.edit().putBoolean(KEY_EQUALIZER_ENABLED, enabled).apply()
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    fun getEqualizerNumberOfBands(): Short? = equalizer?.numberOfBands
+
+    fun getEqualizerBandLevelRange(): ShortArray? = equalizer?.bandLevelRange
+
+    fun getEqualizerCenterFreq(band: Short): Int? = equalizer?.getCenterFreq(band)
+
+    fun getEqualizerBandLevel(band: Short): Short? = equalizer?.getBandLevel(band)
+
+    fun setEqualizerBandLevel(band: Short, level: Short) {
+        try {
+            equalizer?.setBandLevel(band, level)
+            prefs.edit().putInt("${KEY_EQUALIZER_BANDS}${band.toInt()}", level.toInt()).apply()
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    // Funções públicas para controlar o Bass Boost
+    fun isBassBoostEnabled(): Boolean = bassBoost?.enabled ?: false
+
+    fun setBassBoostEnabled(enabled: Boolean) {
+        try {
+            bassBoost?.enabled = enabled
+            prefs.edit().putBoolean(KEY_BASS_BOOST_ENABLED, enabled).apply()
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    fun getBassBoostStrength(): Short? = bassBoost?.roundedStrength
+
+    fun setBassBoostStrength(strength: Short) {
+        try {
+            val limitedStrength = strength.toInt().coerceIn(0, 500).toShort()
+            bassBoost?.setStrength(limitedStrength)
+            prefs.edit().putInt(KEY_BASS_BOOST_STRENGTH, limitedStrength.toInt()).apply()
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    // Funções públicas para controlar o Haas Effect (3D Simples)
+    fun getHaasMode(): Int = haasEffect?.getCurrentMode() ?: HaasEffect.HAAS_OFF
+
+    fun setHaasMode(mode: Int) {
+        try {
+            haasEffect?.setHaasMode(mode)
+            prefs.edit().putInt(KEY_HAAS_MODE, mode).apply()
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    fun isHaasEnabled(): Boolean = haasEffect?.isEnabled() ?: false
+
+    // ==================== FIM DAS FUNÇÕES DE EFEITOS ====================
+
     fun isPlaying(): Boolean = mediaPlayer?.isPlaying ?: false
     fun getCurrentPosition(): Int = mediaPlayer?.currentPosition ?: 0
     fun getDuration(): Int = mediaPlayer?.duration ?: 0
@@ -487,7 +671,6 @@ class MusicService : Service() {
     fun getMusicList(): List<Music> = musicList
     fun hasMusic(): Boolean = musicList.isNotEmpty()
 
-    // FAVORITOS
     private fun getFavoritePaths(): Set<String> {
         return prefs.getStringSet(KEY_FAVORITES, mutableSetOf()) ?: mutableSetOf()
     }
@@ -524,7 +707,6 @@ class MusicService : Service() {
         return musicList.filter { favoritePaths.contains(it.path) }
     }
 
-    // SALVAR ESTADO PERIÓDICO
     private val saveStateRunnable = object : Runnable {
         override fun run() {
             if (isPrepared && !isServiceStopping) {
@@ -534,7 +716,6 @@ class MusicService : Service() {
         }
     }
 
-    // SALVAR ESTADO
     private fun saveState() {
         if (isServiceStopping) return
 
@@ -577,10 +758,9 @@ class MusicService : Service() {
             saveState()
         }
         handler.removeCallbacks(saveStateRunnable)
+        stopNotificationUpdate() // ADICIONAR ESTA LINHA
+        releaseAudioEffects()
         instance = null
         mediaPlayer?.release()
-
-        // MARCAR SERVICE COMO PARADO
-        prefs.edit().putBoolean(KEY_SERVICE_RUNNING, false).apply()
     }
 }
