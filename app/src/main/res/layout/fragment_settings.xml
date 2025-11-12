@@ -167,7 +167,7 @@
             <TextView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="Áudio 3D (Efeito Haas)"
+                android:text="Áudio 3D Simples"
                 android:textColor="@color/white"
                 android:textSize="18sp"
                 android:textStyle="bold" />
@@ -200,7 +200,7 @@
                     android:id="@+id/radioHaasShort"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:text="Curto (200ms) - Sutil"
+                    android:text="Curto (500ms) - Sutil"
                     android:textColor="@color/white"
                     android:buttonTint="@color/spotify_green"
                     android:layout_marginTop="8dp" />
@@ -209,7 +209,7 @@
                     android:id="@+id/radioHaasMedium"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:text="Médio (300ms) - Moderado"
+                    android:text="Médio (800ms) - Moderado"
                     android:textColor="@color/white"
                     android:buttonTint="@color/spotify_green"
                     android:layout_marginTop="8dp" />
@@ -218,7 +218,7 @@
                     android:id="@+id/radioHaasLong"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:text="Longo (400ms) - Intenso"
+                    android:text="Longo (1000ms) - Intenso"
                     android:textColor="@color/white"
                     android:buttonTint="@color/spotify_green"
                     android:layout_marginTop="8dp" />
