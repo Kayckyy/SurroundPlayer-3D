@@ -180,7 +180,7 @@
                     <TextView
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:text="Áudio 3D (Efeito Haas)"
+                        android:text="Áudio 3D"
                         android:textColor="@color/white"
                         android:textSize="18sp"
                         android:textStyle="bold" />
@@ -188,7 +188,6 @@
                     <TextView
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:text="Processamento nativo via Oboe"
                         android:textColor="@color/spotify_green"
                         android:textSize="11sp"
                         android:layout_marginTop="2dp"
@@ -234,7 +233,7 @@
                     android:id="@+id/radioHaasShort"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:text="Curto (200ms) - Sutil"
+                    android:text="Curto (10ms) - Sutil"
                     android:textColor="@color/white"
                     android:buttonTint="@color/spotify_green"
                     android:paddingVertical="8dp" />
@@ -243,7 +242,7 @@
                     android:id="@+id/radioHaasMedium"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:text="Médio (300ms) - Moderado"
+                    android:text="Médio (30ms) - Moderado"
                     android:textColor="@color/white"
                     android:buttonTint="@color/spotify_green"
                     android:paddingVertical="8dp" />
@@ -252,7 +251,7 @@
                     android:id="@+id/radioHaasLong"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:text="Longo (400ms) - Intenso"
+                    android:text="Longo (50ms) - Intenso"
                     android:textColor="@color/white"
                     android:buttonTint="@color/spotify_green"
                     android:paddingVertical="8dp" />

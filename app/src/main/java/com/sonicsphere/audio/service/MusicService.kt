@@ -9,33 +9,26 @@ import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
 import android.graphics.BitmapFactory
-import android.media.MediaPlayer
-import android.media.audiofx.BassBoost
-import android.media.audiofx.Equalizer
 import android.os.Binder
 import android.os.Build
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
+import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.sonicsphere.audio.metadata.AlbumArtExtractor
 import com.sonicsphere.audio.MainActivity
 import com.sonicsphere.audio.metadata.Music
 import com.sonicsphere.audio.R
-import com.sonicsphere.audio.effects.HaasEffect
 import java.io.File
 
 class MusicService : Service() {
 
     private val binder = MusicBinder()
     private var notificationUpdateRunnable: Runnable? = null
-    private var mediaPlayer: MediaPlayer? = null
 
-    // EFEITOS DE ÁUDIO
-    private var equalizer: Equalizer? = null
-    private var bassBoost: BassBoost? = null
-    private var audioDecoder: AudioDecoder? = null
-    private var oboeEngine: OboeAudioEngine? = null
+    // STREAMING PLAYER
+    private var player: StreamingAudioPlayer? = null
 
     private var currentMusicIndex = 0
     private var musicList: MutableList<Music> = mutableListOf()
@@ -51,13 +44,13 @@ class MusicService : Service() {
     private val handler = Handler(Looper.getMainLooper())
 
     companion object {
-        const val ACTION_PLAY = "com.example.musicplayer.ACTION_PLAY"
-        const val ACTION_PAUSE = "com.example.musicplayer.ACTION_PAUSE"
-        const val ACTION_NEXT = "com.example.musicplayer.ACTION_NEXT"
-        const val ACTION_PREVIOUS = "com.example.musicplayer.ACTION_PREVIOUS"
-        const val ACTION_STOP = "com.example.musicplayer.ACTION_STOP"
-        const val ACTION_TOGGLE_SHUFFLE = "com.example.musicplayer.ACTION_TOGGLE_SHUFFLE"
-        const val ACTION_TOGGLE_REPEAT = "com.example.musicplayer.ACTION_TOGGLE_REPEAT"
+        const val ACTION_PLAY = "com.sonicsphere.audio.ACTION_PLAY"
+        const val ACTION_PAUSE = "com.sonicsphere.audio.ACTION_PAUSE"
+        const val ACTION_NEXT = "com.sonicsphere.audio.ACTION_NEXT"
+        const val ACTION_PREVIOUS = "com.sonicsphere.audio.ACTION_PREVIOUS"
+        const val ACTION_STOP = "com.sonicsphere.audio.ACTION_STOP"
+        const val ACTION_TOGGLE_SHUFFLE = "com.sonicsphere.audio.ACTION_TOGGLE_SHUFFLE"
+        const val ACTION_TOGGLE_REPEAT = "com.sonicsphere.audio.ACTION_TOGGLE_REPEAT"
 
         const val REPEAT_NONE = 0
         const val REPEAT_ALL = 1
@@ -72,17 +65,9 @@ class MusicService : Service() {
         private const val KEY_SHUFFLE = "shuffle_mode"
         private const val KEY_REPEAT = "repeat_mode"
         private const val KEY_IS_PLAYING = "is_playing"
-        private const val KEY_LAST_POSITION = "last_position"
         private const val KEY_LAST_MUSIC_PATH = "last_music_path"
         private const val KEY_FAVORITES = "favorite_musics"
         private const val KEY_SERVICE_RUNNING = "service_running"
-
-        // CHAVES PARA EFEITOS DE ÁUDIO
-        private const val KEY_EQUALIZER_ENABLED = "equalizer_enabled"
-        private const val KEY_EQUALIZER_BANDS = "equalizer_bands_"
-        private const val KEY_BASS_BOOST_ENABLED = "bass_boost_enabled"
-        private const val KEY_BASS_BOOST_STRENGTH = "bass_boost_strength"
-        private const val KEY_HAAS_MODE = "haas_mode"
         private const val KEY_HAAS_DELAY = "haas_delay_ms"
     }
 
@@ -99,14 +84,6 @@ class MusicService : Service() {
 
         prefs.edit().putBoolean(KEY_SERVICE_RUNNING, true).apply()
 
-        mediaPlayer = MediaPlayer().apply {
-            setOnCompletionListener {
-                onTrackCompletion()
-            }
-            setOnErrorListener { _, what, extra ->
-                false
-            }
-        }
         createNotificationChannel()
 
         if (shouldStartForeground()) {
@@ -114,9 +91,9 @@ class MusicService : Service() {
         }
 
         startNotificationUpdate()
-        audioDecoder = AudioDecoder()
-        oboeEngine = OboeAudioEngine()
-        oboeEngine?.start()
+
+        Log.d("MusicService", "✅ Service criado")
+
         restoreState()
     }
 
@@ -172,6 +149,7 @@ class MusicService : Service() {
                 setSound(null, null)
             }
             val manager = getSystemService(NotificationManager::class.java)
+            manager.createNotificationChannel(channel)
         }
     }
 
@@ -264,17 +242,8 @@ class MusicService : Service() {
             "Pausado"
         }
 
-        // Calcular progresso da música
-        val duration = getDuration()
-        val position = getCurrentPosition()
-        val progress = if (duration > 0) {
-            ((position.toFloat() / duration.toFloat()) * 100).toInt()
-        } else {
-            0
-        }
-
         val notificationBuilder = NotificationCompat.Builder(this, channelId)
-            .setContentTitle(music?.title ?: "Music Player")
+            .setContentTitle(music?.title ?: "SonicSphere")
             .setContentText(contentText)
             .setSmallIcon(R.drawable.ic_music_note)
             .setLargeIcon(BitmapFactory.decodeResource(resources, R.drawable.album_placeholder))
@@ -283,8 +252,6 @@ class MusicService : Service() {
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .setOnlyAlertOnce(true)
             .setShowWhen(false)
-            // ADICIONAR BARRA DE PROGRESSO
-            .setProgress(100, progress, false)
             .addAction(R.drawable.ic_skip_previous, "Anterior", previousPendingIntent)
             .addAction(playPauseIcon, if (isPlaying()) "Pausar" else "Tocar", playPausePendingIntent)
             .addAction(R.drawable.ic_skip_next, "Próxima", nextPendingIntent)
@@ -296,22 +263,24 @@ class MusicService : Service() {
             notificationBuilder.setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
         }
 
-        notificationBuilder.setStyle(androidx.media.app.NotificationCompat.MediaStyle()
-            .setShowActionsInCompactView(0, 1, 2)
-            .setShowCancelButton(true)
-            .setCancelButtonIntent(stopPendingIntent))
+        notificationBuilder.setStyle(
+            androidx.media.app.NotificationCompat.MediaStyle()
+                .setShowActionsInCompactView(0, 1, 2)
+                .setShowCancelButton(true)
+                .setCancelButtonIntent(stopPendingIntent)
+        )
 
         return notificationBuilder.build()
     }
 
     private fun startNotificationUpdate() {
-        stopNotificationUpdate() // Para qualquer atualização anterior
+        stopNotificationUpdate()
 
         notificationUpdateRunnable = object : Runnable {
             override fun run() {
                 if (!isServiceStopping && hasMusic()) {
                     updateNotification()
-                    handler.postDelayed(this, 1000) // Atualizar a cada 1 segundo
+                    handler.postDelayed(this, 1000)
                 }
             }
         }
@@ -327,7 +296,6 @@ class MusicService : Service() {
 
     private fun restorePlaybackState() {
         val lastMusicPath = prefs.getString(KEY_LAST_MUSIC_PATH, "")
-        val lastPosition = prefs.getInt(KEY_LAST_POSITION, 0)
         val wasPlaying = prefs.getBoolean(KEY_IS_PLAYING, false)
 
         if (lastMusicPath?.isNotEmpty() == true) {
@@ -335,31 +303,13 @@ class MusicService : Service() {
             if (file.exists()) {
                 playMusicFile(lastMusicPath)
 
-                handler.postDelayed({
-                    if (lastPosition > 0 && lastPosition < (getDuration() - 5000)) {
-                        seekTo(lastPosition)
-                    }
-                    if (wasPlaying) {
-                        mediaPlayer?.start()
-                    }
-                }, 1000)
+                if (!wasPlaying) {
+                    handler.postDelayed({
+                        pauseMusic()
+                    }, 1000)
+                }
             }
         }
-    }
-
-    private fun restorePlaybackPosition() {
-        val lastPosition = prefs.getInt(KEY_LAST_POSITION, 0)
-        val lastMusicPath = prefs.getString(KEY_LAST_MUSIC_PATH, "")
-        val currentMusicPath = getCurrentMusic()?.path
-
-        if (lastMusicPath == currentMusicPath && lastPosition > 0 && lastPosition < (getDuration() - 5000)) {
-            handler.postDelayed({
-                mediaPlayer?.seekTo(lastPosition)
-            }, 100)
-        }
-
-        mediaPlayer?.start()
-        updateNotification()
     }
 
     fun loadMusicFilesFromFolder(folderPath: String) {
@@ -411,24 +361,68 @@ class MusicService : Service() {
         currentMusicIndex = index
         val music = musicList[index]
 
-        // Decodificar e carregar no Oboe
-        Thread {
-            val decoded = audioDecoder?.decodeAudio(music.path)
-            if (decoded != null) {
-                oboeEngine?.loadAudio(decoded.pcmData, decoded.sampleRate, decoded.channelCount)
-                oboeEngine?.play()
+        isPrepared = false
 
-                // Aplicar Haas
-                val haasDelay = getHaasDelay()
-                if (haasDelay > 0) {
-                    oboeEngine?.setHaasDelay(haasDelay)
-                    oboeEngine?.enableHaas(true)
+        // Liberar player anterior
+        player?.release()
+
+        // Criar novo player
+        player = StreamingAudioPlayer().apply {
+            // APLICAR HAAS ANTES DE PREPARAR
+            val savedHaasDelay = getHaasDelay()
+            if (savedHaasDelay > 0) {
+                setHaasDelay(savedHaasDelay)
+                Log.d("MusicService", "🎧 Haas pré-configurado: ${savedHaasDelay}ms")
+            }
+
+            // Callbacks
+            onPrepared = {
+                handler.post {
+                    isPrepared = true
+
+                    // Carregar metadados em background
+                    Thread {
+                        val metadata = AlbumArtExtractor.getMetadata(music.path)
+                        if (metadata != null) {
+                            handler.post {
+                                musicList[currentMusicIndex] = musicList[currentMusicIndex].copy(
+                                    title = metadata.title ?: musicList[currentMusicIndex].title,
+                                    artist = metadata.artist ?: "Artista Desconhecido",
+                                    album = metadata.album ?: musicList[currentMusicIndex].album,
+                                    duration = metadata.duration
+                                )
+                                updateNotification()
+                            }
+                        }
+                    }.start()
+
+                    // Tocar
+                    player?.play()
+                    updateNotification()
+                    saveState()
+
+                    Log.d("MusicService", "✅ Tocando: ${music.title}")
                 }
             }
-        }.start()
 
+            onCompletion = {
+                handler.post {
+                    onTrackCompletion()
+                }
+            }
+
+            onError = { error ->
+                handler.post {
+                    Log.e("MusicService", "❌ Erro: $error")
+                }
+            }
+        }
+
+        // Preparar e carregar
+        player?.prepare(music.path)
         updateNotification()
-        saveState()
+
+        Log.d("MusicService", "▶️ Carregando: ${music.title}")
     }
 
     fun playCurrentMusic() {
@@ -438,40 +432,51 @@ class MusicService : Service() {
     }
 
     fun pauseMusic() {
-        oboeEngine?.pause()
+        player?.pause()
         updateNotification()
         saveState()
+        Log.d("MusicService", "⏸️ Pausado")
     }
 
     fun resumeMusic() {
         if (isPrepared) {
-            oboeEngine?.start()
+            player?.play()
             updateNotification()
         } else if (musicList.isNotEmpty()) {
             playCurrentMusic()
         }
         saveState()
+        Log.d("MusicService", "▶️ Retomado")
     }
 
     fun stopMusicCompletely() {
-        isServiceStopping = true
-        saveState()
+        try {
+            Log.d("MusicService", "⏹️ Parando...")
 
-        mediaPlayer?.stop()
-        mediaPlayer?.reset()
-        isPrepared = false
+            isServiceStopping = true
+            saveState()
 
-        releaseAudioEffects()
+            player?.stop()
+            player?.release()
+            player = null
 
-        stopForeground(true)
-        stopSelf()
+            isPrepared = false
 
-        prefs.edit().putBoolean(KEY_SERVICE_RUNNING, false).apply()
-        instance = null
-    }
+            try {
+                stopForeground(STOP_FOREGROUND_REMOVE)
+            } catch (e: Exception) {
+                Log.e("MusicService", "Erro ao parar foreground", e)
+            }
 
-    fun stopMusic() {
-        stopMusicCompletely()
+            prefs.edit().putBoolean(KEY_SERVICE_RUNNING, false).apply()
+            stopSelf()
+            instance = null
+
+            Log.d("MusicService", "✅ Parado")
+
+        } catch (e: Exception) {
+            Log.e("MusicService", "ERRO ao parar", e)
+        }
     }
 
     fun playNext() {
@@ -497,10 +502,8 @@ class MusicService : Service() {
     }
 
     fun seekTo(position: Int) {
-        if (isPrepared) {
-            mediaPlayer?.seekTo(position)
-            saveState()
-        }
+        // TODO: Implementar seek
+        Log.w("MusicService", "Seek não implementado")
     }
 
     fun toggleShuffle(): Boolean {
@@ -530,120 +533,15 @@ class MusicService : Service() {
         }
     }
 
-    // ==================== FUNÇÕES DE EFEITOS DE ÁUDIO ====================
-
-    private fun initializeAudioEffects() {
-        try {
-            releaseAudioEffects()
-
-            val audioSessionId = mediaPlayer?.audioSessionId ?: return
-
-            // Criar Equalizer
-            equalizer = Equalizer(0, audioSessionId).apply {
-                enabled = prefs.getBoolean(KEY_EQUALIZER_ENABLED, false)
-
-                val numberOfBands = this.numberOfBands
-                for (band in 0 until numberOfBands.toInt()) {
-                    val savedLevel = prefs.getInt("${KEY_EQUALIZER_BANDS}$band", 0)
-                    try {
-                        setBandLevel(band.toShort(), savedLevel.toShort())
-                    } catch (e: Exception) {
-                        e.printStackTrace()
-                    }
-                }
-            }
-
-            // Criar Bass Boost
-            bassBoost = BassBoost(0, audioSessionId).apply {
-                val savedEnabled = prefs.getBoolean(KEY_BASS_BOOST_ENABLED, false)
-                val savedStrength = prefs.getInt(KEY_BASS_BOOST_STRENGTH, 0)
-                val limitedStrength = savedStrength.coerceIn(0, 500)
-                setStrength(limitedStrength.toShort())
-                enabled = savedEnabled
-            }
-
-
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
-    }
-
-    private fun releaseAudioEffects() {
-        try {
-            equalizer?.release()
-            equalizer = null
-
-            bassBoost?.release()
-            bassBoost = null
-
-
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
-    }
-
-    // Funções públicas para controlar o Equalizer
-    fun isEqualizerEnabled(): Boolean = equalizer?.enabled ?: false
-
-    fun setEqualizerEnabled(enabled: Boolean) {
-        try {
-            equalizer?.enabled = enabled
-            prefs.edit().putBoolean(KEY_EQUALIZER_ENABLED, enabled).apply()
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
-    }
-
-    fun getEqualizerNumberOfBands(): Short? = equalizer?.numberOfBands
-
-    fun getEqualizerBandLevelRange(): ShortArray? = equalizer?.bandLevelRange
-
-    fun getEqualizerCenterFreq(band: Short): Int? = equalizer?.getCenterFreq(band)
-
-    fun getEqualizerBandLevel(band: Short): Short? = equalizer?.getBandLevel(band)
-
-    fun setEqualizerBandLevel(band: Short, level: Short) {
-        try {
-            equalizer?.setBandLevel(band, level)
-            prefs.edit().putInt("${KEY_EQUALIZER_BANDS}${band.toInt()}", level.toInt()).apply()
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
-    }
-
-    // Funções públicas para controlar o Bass Boost
-    fun isBassBoostEnabled(): Boolean = bassBoost?.enabled ?: false
-
-    fun setBassBoostEnabled(enabled: Boolean) {
-        try {
-            bassBoost?.enabled = enabled
-            prefs.edit().putBoolean(KEY_BASS_BOOST_ENABLED, enabled).apply()
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
-    }
-
-    fun getBassBoostStrength(): Short? = bassBoost?.roundedStrength
-
-    fun setBassBoostStrength(strength: Short) {
-        try {
-            val limitedStrength = strength.toInt().coerceIn(0, 500).toShort()
-            bassBoost?.setStrength(limitedStrength)
-            prefs.edit().putInt(KEY_BASS_BOOST_STRENGTH, limitedStrength.toInt()).apply()
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
-    }
-
-    // ==================== FIM DAS FUNÇÕES DE EFEITOS ====================
-
-    fun isPlaying(): Boolean = mediaPlayer?.isPlaying ?: false
-    fun getCurrentPosition(): Int = mediaPlayer?.currentPosition ?: 0
-    fun getDuration(): Int = mediaPlayer?.duration ?: 0
+    // Getters
+    fun isPlaying(): Boolean = player?.isPlaying() ?: false
+    fun getCurrentPosition(): Int = 0 // TODO
+    fun getDuration(): Int = player?.getDuration()?.toInt() ?: 0
     fun getCurrentMusic(): Music? = if (currentMusicIndex in musicList.indices) musicList[currentMusicIndex] else null
     fun getMusicList(): List<Music> = musicList
     fun hasMusic(): Boolean = musicList.isNotEmpty()
 
+    // Favoritos
     private fun getFavoritePaths(): Set<String> {
         return prefs.getStringSet(KEY_FAVORITES, mutableSetOf()) ?: mutableSetOf()
     }
@@ -680,6 +578,22 @@ class MusicService : Service() {
         return musicList.filter { favoritePaths.contains(it.path) }
     }
 
+    // Haas Effect
+    fun getHaasDelay(): Int {
+        return prefs.getInt(KEY_HAAS_DELAY, 0)
+    }
+
+    fun setHaasDelay(delayMs: Int) {
+        // Aplicar no player atual
+        player?.setHaasDelay(delayMs)
+
+        // SALVAR PARA PERSISTIR
+        prefs.edit().putInt(KEY_HAAS_DELAY, delayMs).apply()
+
+        Log.d("MusicService", "🎧 Haas configurado e salvo: ${delayMs}ms")
+    }
+
+    // Estado
     private val saveStateRunnable = object : Runnable {
         override fun run() {
             if (isPrepared && !isServiceStopping) {
@@ -698,7 +612,6 @@ class MusicService : Service() {
             putBoolean(KEY_SHUFFLE, isShuffling)
             putInt(KEY_REPEAT, repeatMode)
             putBoolean(KEY_IS_PLAYING, isPlaying())
-            putInt(KEY_LAST_POSITION, getCurrentPosition())
             putString(KEY_LAST_MUSIC_PATH, currentMusic?.path ?: "")
             putBoolean(KEY_SERVICE_RUNNING, true)
         }.apply()
@@ -710,20 +623,6 @@ class MusicService : Service() {
 
     fun getCurrentFolder(): String {
         return prefs.getString(KEY_CURRENT_PATH, "") ?: ""
-    }
-
-    fun getHaasDelay(): Int {
-        return prefs.getInt(KEY_HAAS_DELAY, 0)
-    }
-
-    fun setHaasDelay(delayMs: Int) {
-        try {
-            // TODO: Chamar OboeAudioEngine quando integrar
-            oboeEngine?.setHaasDelay(delayMs)
-            prefs.edit().putInt(KEY_HAAS_DELAY, delayMs).apply()
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
     }
 
     private fun restoreState() {
@@ -741,14 +640,40 @@ class MusicService : Service() {
 
     override fun onDestroy() {
         super.onDestroy()
-        if (!isServiceStopping) {
-            saveState()
+
+        try {
+            Log.d("MusicService", "🔴 Destruindo...")
+
+            handler.removeCallbacks(saveStateRunnable)
+            stopNotificationUpdate()
+
+            if (!isServiceStopping) {
+                saveState()
+            }
+
+            player?.release()
+            player = null
+
+            instance = null
+
+            Log.d("MusicService", "✅ Service destruído")
+
+        } catch (e: Exception) {
+            Log.e("MusicService", "💥 ERRO onDestroy", e)
+            instance = null
         }
-        handler.removeCallbacks(saveStateRunnable)
-        stopNotificationUpdate() // ADICIONAR ESTA LINHA
-        releaseAudioEffects()
-        oboeEngine?.destroy()
-        instance = null
-        mediaPlayer?.release()
     }
+
+    // Equalizer/BassBoost - DESABILITADOS (implementar em C++ depois se quiser)
+    fun isEqualizerEnabled(): Boolean = false
+    fun setEqualizerEnabled(enabled: Boolean) {}
+    fun getEqualizerNumberOfBands(): Short? = null
+    fun getEqualizerBandLevelRange(): ShortArray? = null
+    fun getEqualizerCenterFreq(band: Short): Int? = null
+    fun getEqualizerBandLevel(band: Short): Short? = null
+    fun setEqualizerBandLevel(band: Short, level: Short) {}
+    fun isBassBoostEnabled(): Boolean = false
+    fun setBassBoostEnabled(enabled: Boolean) {}
+    fun getBassBoostStrength(): Short? = null
+    fun setBassBoostStrength(strength: Short) {}
 }

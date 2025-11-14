@@ -101,12 +101,11 @@ class SettingsFragment : Fragment() {
             override fun onStopTrackingTouch(seekBar: SeekBar?) {}
         })
 
-        // Haas Effect (3D Simples) - ATUALIZADO PARA OBOE
         binding.radioGroupHaas.setOnCheckedChangeListener { _, checkedId ->
             val delayMs = when (checkedId) {
-                binding.radioHaasShort.id -> 200
-                binding.radioHaasMedium.id -> 300
-                binding.radioHaasLong.id -> 400
+                binding.radioHaasShort.id -> 10   // 10ms
+                binding.radioHaasMedium.id -> 30  // 30ms
+                binding.radioHaasLong.id -> 50    // 50ms
                 else -> 0
             }
             getMusicService()?.setHaasDelay(delayMs)
@@ -196,9 +195,9 @@ class SettingsFragment : Fragment() {
         // Atualizar Haas Effect - SIMPLIFICADO
         val haasDelay = service.getHaasDelay()
         when (haasDelay) {
-            200 -> binding.radioHaasShort.isChecked = true
-            300 -> binding.radioHaasMedium.isChecked = true
-            400 -> binding.radioHaasLong.isChecked = true
+            10 -> binding.radioHaasShort.isChecked = true
+            30 -> binding.radioHaasMedium.isChecked = true
+            50 -> binding.radioHaasLong.isChecked = true
             else -> binding.radioHaasOff.isChecked = true
         }
     }
