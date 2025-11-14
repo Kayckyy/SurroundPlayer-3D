@@ -5,16 +5,22 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.SharedPreferences
 import android.graphics.BitmapFactory
+import android.media.AudioManager
+import android.media.session.MediaSession
+import android.media.session.PlaybackState
 import android.os.Binder
 import android.os.Build
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
 import android.util.Log
+import android.view.KeyEvent
 import androidx.core.app.NotificationCompat
 import com.sonicsphere.audio.metadata.AlbumArtExtractor
 import com.sonicsphere.audio.MainActivity
@@ -39,6 +45,12 @@ class MusicService : Service() {
 
     private val channelId = "music_player_channel"
     private val notificationId = 1
+
+    // Novas variáveis para controles externos
+    private var mediaSession: MediaSession? = null
+    private var audioManager: AudioManager? = null
+    private var mediaButtonReceiver: BroadcastReceiver? = null
+
 
     private lateinit var prefs: SharedPreferences
     private val handler = Handler(Looper.getMainLooper())
@@ -69,6 +81,7 @@ class MusicService : Service() {
         private const val KEY_FAVORITES = "favorite_musics"
         private const val KEY_SERVICE_RUNNING = "service_running"
         private const val KEY_HAAS_DELAY = "haas_delay_ms"
+        private const val SEEK_THRESHOLD_MS = 5000 // 5 segundos
     }
 
     inner class MusicBinder : Binder() {
@@ -85,6 +98,9 @@ class MusicService : Service() {
         prefs.edit().putBoolean(KEY_SERVICE_RUNNING, true).apply()
 
         createNotificationChannel()
+        setupMediaSession()
+        registerAudioFocus()
+        registerMediaButtonReceiver()
 
         if (shouldStartForeground()) {
             startForegroundService()
@@ -95,6 +111,11 @@ class MusicService : Service() {
         Log.d("MusicService", "✅ Service criado")
 
         restoreState()
+
+        val savedHaasDelay = getHaasDelay()
+        if (savedHaasDelay > 0) {
+            Log.d("MusicService", "🎧 Haas inicial configurado: ${savedHaasDelay}ms")
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -103,7 +124,7 @@ class MusicService : Service() {
                 ACTION_PLAY -> resumeMusic()
                 ACTION_PAUSE -> pauseMusic()
                 ACTION_NEXT -> playNext()
-                ACTION_PREVIOUS -> playPrevious()
+                ACTION_PREVIOUS -> handlePreviousWithThreshold()
                 ACTION_STOP -> {
                     stopMusicCompletely()
                     return START_NOT_STICKY
@@ -113,12 +134,210 @@ class MusicService : Service() {
             }
         }
 
+        if (Intent.ACTION_MEDIA_BUTTON == intent?.action) {
+            val event = intent.getParcelableExtra<KeyEvent>(Intent.EXTRA_KEY_EVENT)
+            event?.let {
+                if (it.action == KeyEvent.ACTION_DOWN) {
+                    when (it.keyCode) {
+                        KeyEvent.KEYCODE_MEDIA_PLAY -> resumeMusic()
+                        KeyEvent.KEYCODE_MEDIA_PAUSE -> pauseMusic()
+                        KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE -> togglePlayPause()
+                        KeyEvent.KEYCODE_MEDIA_NEXT -> playNext()
+                        KeyEvent.KEYCODE_MEDIA_PREVIOUS -> handlePreviousWithThreshold()
+                        KeyEvent.KEYCODE_MEDIA_STOP -> stopMusicCompletely()
+                    }
+                }
+            }
+        }
+
         if (intent?.action == null && shouldRestorePlayback()) {
             restorePlaybackState()
         }
 
         return START_NOT_STICKY
     }
+
+    // ========== MÉTODOS PARA CONTROLES EXTERNOS ==========
+
+    private fun setupMediaSession() {
+        try {
+            mediaSession = MediaSession(this, "MusicService")
+            mediaSession?.setFlags(
+                MediaSession.FLAG_HANDLES_MEDIA_BUTTONS or
+                        MediaSession.FLAG_HANDLES_TRANSPORT_CONTROLS
+            )
+
+            mediaSession?.setCallback(object : MediaSession.Callback() {
+                override fun onPlay() {
+                    resumeMusic()
+                }
+
+                override fun onPause() {
+                    pauseMusic()
+                }
+
+                override fun onSkipToNext() {
+                    playNext()
+                }
+
+                override fun onSkipToPrevious() {
+                    handlePreviousWithThreshold()
+                }
+
+                override fun onStop() {
+                    stopMusicCompletely()
+                }
+
+                override fun onSeekTo(pos: Long) {
+                    seekTo(pos.toInt())
+                }
+            })
+
+            mediaSession?.isActive = true
+            updateMediaSessionState()
+
+            Log.d("MusicService", "✅ Media Session configurada")
+        } catch (e: Exception) {
+            Log.e("MusicService", "❌ Erro ao configurar Media Session", e)
+        }
+    }
+
+    private fun registerAudioFocus() {
+        try {
+            audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
+            val result = audioManager?.requestAudioFocus(
+                audioFocusChangeListener,
+                AudioManager.STREAM_MUSIC,
+                AudioManager.AUDIOFOCUS_GAIN
+            )
+
+            if (result == AudioManager.AUDIOFOCUS_REQUEST_GRANTED) {
+                Log.d("MusicService", "✅ Foco de áudio concedido")
+            } else {
+                Log.w("MusicService", "⚠️ Foco de áudio não concedido")
+            }
+        } catch (e: Exception) {
+            Log.e("MusicService", "❌ Erro ao registrar foco de áudio", e)
+        }
+    }
+
+    private fun registerMediaButtonReceiver() {
+        mediaButtonReceiver = object : BroadcastReceiver() {
+            override fun onReceive(context: Context?, intent: Intent?) {
+                if (Intent.ACTION_MEDIA_BUTTON == intent?.action) {
+                    val event = intent.getParcelableExtra<KeyEvent>(Intent.EXTRA_KEY_EVENT)
+                    event?.let {
+                        if (it.action == KeyEvent.ACTION_DOWN) {
+                            Log.d("MusicService", "📱 Botão de mídia pressionado: ${it.keyCode}")
+                            when (it.keyCode) {
+                                KeyEvent.KEYCODE_MEDIA_PLAY -> resumeMusic()
+                                KeyEvent.KEYCODE_MEDIA_PAUSE -> pauseMusic()
+                                KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE -> togglePlayPause()
+                                KeyEvent.KEYCODE_MEDIA_NEXT -> playNext()
+                                KeyEvent.KEYCODE_MEDIA_PREVIOUS -> handlePreviousWithThreshold()
+                                KeyEvent.KEYCODE_MEDIA_STOP -> stopMusicCompletely()
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        val filter = IntentFilter(Intent.ACTION_MEDIA_BUTTON)
+
+        // CORREÇÃO: Adicionar flag para Android 14+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            mediaButtonReceiver?.let {
+                registerReceiver(it, filter, RECEIVER_EXPORTED)
+            }
+        } else {
+            mediaButtonReceiver?.let {
+                registerReceiver(it, filter, RECEIVER_EXPORTED)
+            }
+        }
+    }
+
+    private val audioFocusChangeListener = AudioManager.OnAudioFocusChangeListener { focusChange ->
+        when (focusChange) {
+            AudioManager.AUDIOFOCUS_LOSS -> {
+                Log.d("MusicService", "🔇 Perda permanente de foco de áudio")
+                pauseMusic()
+            }
+            AudioManager.AUDIOFOCUS_LOSS_TRANSIENT -> {
+                Log.d("MusicService", "⏸️ Perda temporária de foco de áudio")
+                if (isPlaying()) {
+                    pauseMusic()
+                }
+            }
+            AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> {
+                Log.d("MusicService", "🔈 Ducking de áudio")
+            }
+            AudioManager.AUDIOFOCUS_GAIN -> {
+                Log.d("MusicService", "🔊 Foco de áudio recuperado")
+            }
+        }
+    }
+
+    fun handlePreviousWithThreshold() {
+        val currentPosition = getCurrentPosition()
+
+        if (currentPosition > SEEK_THRESHOLD_MS) {
+            seekTo(0)
+            Log.d("MusicService", "⏪ Voltar ao início (posição: ${formatTime(currentPosition)})")
+        } else {
+            playPrevious()
+            Log.d("MusicService", "⏮️ Música anterior (posição: ${formatTime(currentPosition)})")
+        }
+
+        updateMediaSessionState()
+    }
+
+    private fun updateMediaSessionState() {
+        try {
+            val currentMusic = getCurrentMusic()
+            val playbackState = if (isPlaying()) {
+                PlaybackState.STATE_PLAYING
+            } else {
+                PlaybackState.STATE_PAUSED
+            }
+
+            val stateBuilder = PlaybackState.Builder()
+                .setActions(
+                    PlaybackState.ACTION_PLAY or
+                            PlaybackState.ACTION_PAUSE or
+                            PlaybackState.ACTION_PLAY_PAUSE or
+                            PlaybackState.ACTION_SKIP_TO_NEXT or
+                            PlaybackState.ACTION_SKIP_TO_PREVIOUS or
+                            PlaybackState.ACTION_SEEK_TO or
+                            PlaybackState.ACTION_STOP
+                )
+                .setState(playbackState, getCurrentPosition().toLong(), 1.0f)
+
+            mediaSession?.setPlaybackState(stateBuilder.build())
+
+            currentMusic?.let { music ->
+                val metadataBuilder = android.media.MediaMetadata.Builder()
+                    .putString(android.media.MediaMetadata.METADATA_KEY_TITLE, music.title)
+                    .putString(android.media.MediaMetadata.METADATA_KEY_ARTIST, music.artist)
+                    .putString(android.media.MediaMetadata.METADATA_KEY_ALBUM, music.album)
+                    .putLong(android.media.MediaMetadata.METADATA_KEY_DURATION, getDuration().toLong())
+
+                mediaSession?.setMetadata(metadataBuilder.build())
+            }
+        } catch (e: Exception) {
+            Log.e("MusicService", "❌ Erro ao atualizar Media Session", e)
+        }
+    }
+
+    private fun togglePlayPause() {
+        if (isPlaying()) {
+            pauseMusic()
+        } else {
+            resumeMusic()
+        }
+    }
+
+    // ========== MÉTODOS EXISTENTES ==========
 
     private fun shouldStartForeground(): Boolean {
         val wasPlaying = prefs.getBoolean(KEY_IS_PLAYING, false)
@@ -263,6 +482,7 @@ class MusicService : Service() {
             notificationBuilder.setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
         }
 
+        // CORREÇÃO: Removida a linha problemática do MediaSession token
         notificationBuilder.setStyle(
             androidx.media.app.NotificationCompat.MediaStyle()
                 .setShowActionsInCompactView(0, 1, 2)
@@ -280,6 +500,7 @@ class MusicService : Service() {
             override fun run() {
                 if (!isServiceStopping && hasMusic()) {
                     updateNotification()
+                    updateMediaSessionState()
                     handler.postDelayed(this, 1000)
                 }
             }
@@ -363,24 +584,16 @@ class MusicService : Service() {
 
         isPrepared = false
 
-        // Liberar player anterior
         player?.release()
 
-        // Criar novo player
-        player = StreamingAudioPlayer().apply {
-            // APLICAR HAAS ANTES DE PREPARAR
-            val savedHaasDelay = getHaasDelay()
-            if (savedHaasDelay > 0) {
-                setHaasDelay(savedHaasDelay)
-                Log.d("MusicService", "🎧 Haas pré-configurado: ${savedHaasDelay}ms")
-            }
+        val savedHaasDelay = getHaasDelay()
+        Log.d("MusicService", "🎧 Haas pré-configurado para nova música: ${savedHaasDelay}ms")
 
-            // Callbacks
+        player = StreamingAudioPlayer().apply {
             onPrepared = {
                 handler.post {
                     isPrepared = true
 
-                    // Carregar metadados em background
                     Thread {
                         val metadata = AlbumArtExtractor.getMetadata(music.path)
                         if (metadata != null) {
@@ -392,16 +605,17 @@ class MusicService : Service() {
                                     duration = metadata.duration
                                 )
                                 updateNotification()
+                                updateMediaSessionState()
                             }
                         }
                     }.start()
 
-                    // Tocar
                     player?.play()
                     updateNotification()
+                    updateMediaSessionState()
                     saveState()
 
-                    Log.d("MusicService", "✅ Tocando: ${music.title}")
+                    Log.d("MusicService", "✅ Tocando: ${music.title} com Haas: ${savedHaasDelay}ms")
                 }
             }
 
@@ -418,9 +632,10 @@ class MusicService : Service() {
             }
         }
 
-        // Preparar e carregar
+        player?.setHaasDelay(savedHaasDelay)
         player?.prepare(music.path)
         updateNotification()
+        updateMediaSessionState()
 
         Log.d("MusicService", "▶️ Carregando: ${music.title}")
     }
@@ -434,6 +649,7 @@ class MusicService : Service() {
     fun pauseMusic() {
         player?.pause()
         updateNotification()
+        updateMediaSessionState()
         saveState()
         Log.d("MusicService", "⏸️ Pausado")
     }
@@ -442,6 +658,7 @@ class MusicService : Service() {
         if (isPrepared) {
             player?.play()
             updateNotification()
+            updateMediaSessionState()
         } else if (musicList.isNotEmpty()) {
             playCurrentMusic()
         }
@@ -502,13 +719,25 @@ class MusicService : Service() {
     }
 
     fun seekTo(position: Int) {
-        // TODO: Implementar seek
-        Log.w("MusicService", "Seek não implementado")
+        if (isPrepared && player != null) {
+            player?.seekTo(position.toLong())
+            updateMediaSessionState()
+            Log.d("MusicService", "⏩ Seek para: ${formatTime(position)}")
+        }
+    }
+
+    fun getCurrentPosition(): Int {
+        return player?.getCurrentPositionMs() ?: 0
+    }
+
+    fun getDuration(): Int {
+        return player?.getDurationMs() ?: 0
     }
 
     fun toggleShuffle(): Boolean {
         isShuffling = !isShuffling
         updateNotification()
+        updateMediaSessionState()
         saveState()
         return isShuffling
     }
@@ -516,6 +745,7 @@ class MusicService : Service() {
     fun toggleRepeat(): Int {
         repeatMode = (repeatMode + 1) % 3
         updateNotification()
+        updateMediaSessionState()
         saveState()
         return repeatMode
     }
@@ -535,11 +765,16 @@ class MusicService : Service() {
 
     // Getters
     fun isPlaying(): Boolean = player?.isPlaying() ?: false
-    fun getCurrentPosition(): Int = 0 // TODO
-    fun getDuration(): Int = player?.getDuration()?.toInt() ?: 0
     fun getCurrentMusic(): Music? = if (currentMusicIndex in musicList.indices) musicList[currentMusicIndex] else null
     fun getMusicList(): List<Music> = musicList
     fun hasMusic(): Boolean = musicList.isNotEmpty()
+
+    private fun formatTime(milliseconds: Int): String {
+        val totalSeconds = milliseconds / 1000
+        val minutes = totalSeconds / 60
+        val seconds = totalSeconds % 60
+        return String.format("%02d:%02d", minutes, seconds)
+    }
 
     // Favoritos
     private fun getFavoritePaths(): Set<String> {
@@ -584,13 +819,15 @@ class MusicService : Service() {
     }
 
     fun setHaasDelay(delayMs: Int) {
-        // Aplicar no player atual
         player?.setHaasDelay(delayMs)
-
-        // SALVAR PARA PERSISTIR
         prefs.edit().putInt(KEY_HAAS_DELAY, delayMs).apply()
+        Log.d("MusicService", "🎧 Haas delay atualizado: ${delayMs}ms")
+    }
 
-        Log.d("MusicService", "🎧 Haas configurado e salvo: ${delayMs}ms")
+    fun applyHaasToCurrentMusic() {
+        val savedHaasDelay = getHaasDelay()
+        player?.setHaasDelay(savedHaasDelay)
+        Log.d("MusicService", "🎧 Haas verificado: ${savedHaasDelay}ms")
     }
 
     // Estado
@@ -647,6 +884,16 @@ class MusicService : Service() {
             handler.removeCallbacks(saveStateRunnable)
             stopNotificationUpdate()
 
+            mediaSession?.isActive = false
+            mediaSession?.release()
+            mediaSession = null
+
+            audioManager?.abandonAudioFocus(audioFocusChangeListener)
+            audioManager = null
+
+            mediaButtonReceiver?.let { unregisterReceiver(it) }
+            mediaButtonReceiver = null
+
             if (!isServiceStopping) {
                 saveState()
             }
@@ -664,7 +911,7 @@ class MusicService : Service() {
         }
     }
 
-    // Equalizer/BassBoost - DESABILITADOS (implementar em C++ depois se quiser)
+    // Equalizer/BassBoost
     fun isEqualizerEnabled(): Boolean = false
     fun setEqualizerEnabled(enabled: Boolean) {}
     fun getEqualizerNumberOfBands(): Short? = null

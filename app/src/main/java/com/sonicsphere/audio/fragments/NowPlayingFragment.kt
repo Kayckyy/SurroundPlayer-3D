@@ -4,6 +4,7 @@ import android.graphics.Bitmap
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.util.Log
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -25,6 +26,7 @@ class NowPlayingFragment : Fragment() {
     private var isServiceReady = false
     private var currentAlbumArt: Bitmap? = null
     private var lastMusicPath: String? = null
+    private var isSeeking = false
 
     override fun onCreateView(
         inflater: LayoutInflater,
@@ -39,6 +41,9 @@ class NowPlayingFragment : Fragment() {
         super.onViewCreated(view, savedInstanceState)
         setupUI()
         setupControls()
+
+        // HAAS JÁ ESTÁ SEMPRE ATIVO, SÓ VERIFICAR
+        verifyHaasState()
     }
 
     override fun onResume() {
@@ -59,6 +64,10 @@ class NowPlayingFragment : Fragment() {
         } else {
             updateMusicInfo()
             updateControlStates()
+            startSeekbarUpdate()
+
+            // HAAS JÁ ESTÁ SEMPRE ATIVO
+            verifyHaasState()
         }
     }
 
@@ -67,6 +76,9 @@ class NowPlayingFragment : Fragment() {
         updateMusicInfo()
         updateControlStates()
         startSeekbarUpdate()
+
+        // HAAS JÁ ESTÁ SEMPRE ATIVO
+        verifyHaasState()
     }
 
     private fun setupUI() {
@@ -78,19 +90,27 @@ class NowPlayingFragment : Fragment() {
         binding.seekBar.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
                 if (fromUser) {
-                    getMusicService()?.seekTo(progress)
                     binding.currentTime.text = formatTime(progress)
                 }
             }
 
-            override fun onStartTrackingTouch(seekBar: SeekBar?) {}
-            override fun onStopTrackingTouch(seekBar: SeekBar?) {}
+            override fun onStartTrackingTouch(seekBar: SeekBar?) {
+                isSeeking = true
+            }
+
+            override fun onStopTrackingTouch(seekBar: SeekBar?) {
+                isSeeking = false
+                seekBar?.progress?.let { progress ->
+                    getMusicService()?.seekTo(progress)
+                }
+            }
         })
     }
 
     private fun setupControls() {
         binding.btnPrevious.setOnClickListener {
-            getMusicService()?.playPrevious()
+            // USAR O NOVO MÉTODO COM THRESHOLD DE 5 SEGUNDOS
+            getMusicService()?.handlePreviousWithThreshold()
             handler.postDelayed({
                 updateMusicInfo()
                 updateControlStates()
@@ -115,7 +135,7 @@ class NowPlayingFragment : Fragment() {
         }
 
         binding.btnRepeat.setOnClickListener {
-            val repeatMode = getMusicService()?.toggleRepeat() ?: MusicService.Companion.REPEAT_NONE
+            val repeatMode = getMusicService()?.toggleRepeat() ?: MusicService.REPEAT_NONE
             updateRepeatButton(repeatMode)
         }
 
@@ -126,6 +146,13 @@ class NowPlayingFragment : Fragment() {
                 updateFavoriteButton(isNowFavorite)
             }
         }
+    }
+
+    // VERIFICAR ESTADO DO HAAS (AGORA SEMPRE ATIVO)
+    private fun verifyHaasState() {
+        val service = getMusicService()
+        val currentHaasDelay = service?.getHaasDelay() ?: 0
+        Log.d("NowPlayingFragment", "🎧 Haas verificado (sempre ativo): ${currentHaasDelay}ms")
     }
 
     private fun togglePlayPause() {
@@ -142,7 +169,7 @@ class NowPlayingFragment : Fragment() {
     private fun updateControlStates() {
         updatePlayPauseButton()
         updateShuffleButton(getMusicService()?.isShuffling() ?: false)
-        updateRepeatButton(getMusicService()?.getRepeatMode() ?: MusicService.Companion.REPEAT_NONE)
+        updateRepeatButton(getMusicService()?.getRepeatMode() ?: MusicService.REPEAT_NONE)
 
         val currentMusic = getMusicService()?.getCurrentMusic()
         val isFavorite = currentMusic?.let { getMusicService()?.isFavorite(it.path) } ?: false
@@ -164,12 +191,12 @@ class NowPlayingFragment : Fragment() {
 
     private fun updateRepeatButton(repeatMode: Int) {
         val icon = when (repeatMode) {
-            MusicService.Companion.REPEAT_ALL -> R.drawable.ic_repeat_all
-            MusicService.Companion.REPEAT_ONE -> R.drawable.ic_repeat_one
+            MusicService.REPEAT_ALL -> R.drawable.ic_repeat_all
+            MusicService.REPEAT_ONE -> R.drawable.ic_repeat_one
             else -> R.drawable.ic_repeat
         }
 
-        val colorRes = if (repeatMode != MusicService.Companion.REPEAT_NONE) R.color.spotify_green else R.color.gray
+        val colorRes = if (repeatMode != MusicService.REPEAT_NONE) R.color.spotify_green else R.color.gray
         val color = ContextCompat.getColor(requireContext(), colorRes)
 
         binding.btnRepeat.setImageResource(icon)
@@ -262,14 +289,18 @@ class NowPlayingFragment : Fragment() {
     }
 
     private fun updateSeekbarProgress() {
+        if (isSeeking) return
+
         val service = getMusicService()
         val currentPosition = service?.getCurrentPosition() ?: 0
         val duration = service?.getDuration() ?: 0
 
-        binding.seekBar.max = duration
-        binding.seekBar.progress = currentPosition
-        binding.currentTime.text = formatTime(currentPosition)
-        binding.totalTime.text = formatTime(duration)
+        if (duration > 0) {
+            binding.seekBar.max = duration
+            binding.seekBar.progress = currentPosition
+            binding.currentTime.text = formatTime(currentPosition)
+            binding.totalTime.text = formatTime(duration)
+        }
 
         updatePlayPauseButton()
     }
@@ -282,7 +313,7 @@ class NowPlayingFragment : Fragment() {
     }
 
     private fun getMusicService(): MusicService? {
-        return (requireActivity() as? MainActivity)?.getMusicService() ?: MusicService.Companion.getInstance()
+        return (requireActivity() as? MainActivity)?.getMusicService() ?: MusicService.getInstance()
     }
 
     override fun onDestroyView() {

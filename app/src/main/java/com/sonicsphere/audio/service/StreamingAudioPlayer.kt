@@ -9,6 +9,7 @@ import android.media.MediaFormat
 import android.util.Log
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
+import kotlin.math.abs
 
 /**
  * Player de áudio com decodificação em streaming
@@ -24,16 +25,22 @@ class StreamingAudioPlayer {
     private var extractor: MediaExtractor? = null
     private var codec: MediaCodec? = null
     private var audioTrack: AudioTrack? = null
-    private var haasProcessor: HaasProcessor? = null
+    private var haasProcessor: SmoothHaasProcessor? = null
 
     private var decoderThread: Thread? = null
     private var isPlaying = false
     private var isPaused = false
     private var isReleased = false
+    private var isSeeking = false
 
     private var sampleRate = 44100
     private var channelCount = 2
     private var durationMs = 0L
+
+    // Variáveis para controle de posição
+    private var currentPositionUs: Long = 0L
+    private var startTimeUs: Long = 0L
+    private var pausedTimeUs: Long = 0L
 
     // GUARDAR CONFIGURAÇÃO DE HAAS
     private var pendingHaasDelay = 0
@@ -116,18 +123,22 @@ class StreamingAudioPlayer {
                             .setChannelMask(channelConfig)
                             .build()
                     )
-                    .setBufferSizeInBytes(minBufferSize * 2)
+                    .setBufferSizeInBytes(minBufferSize * 4)
                     .setTransferMode(AudioTrack.MODE_STREAM)
                     .build()
 
-                // Criar Haas Processor
-                haasProcessor = HaasProcessor(sampleRate)
+                // Resetar posição
+                currentPositionUs = 0L
+                startTimeUs = 0L
+                pausedTimeUs = 0L
 
-                // APLICAR HAAS PENDENTE (se houver)
+                // Criar Haas Processor SEMPRE ATIVO
+                haasProcessor = SmoothHaasProcessor(sampleRate)
+
+                // APLICAR HAAS PENDENTE (se houver) - AGORA ANTES DE TOCAR
                 if (pendingHaasDelay > 0) {
                     haasProcessor?.setDelayMs(pendingHaasDelay)
-                    haasProcessor?.setEnabled(true)
-                    Log.d(TAG, "🎧 Haas aplicado: ${pendingHaasDelay}ms")
+                    Log.d(TAG, "🎧 Haas pré-aplicado: ${pendingHaasDelay}ms")
                 }
 
                 Log.d(TAG, "✅ Preparado!")
@@ -145,6 +156,7 @@ class StreamingAudioPlayer {
 
         if (isPaused) {
             isPaused = false
+            startTimeUs = System.nanoTime() / 1000 - pausedTimeUs
             audioTrack?.play()
             Log.d(TAG, "▶️ Retomado")
             return
@@ -152,6 +164,7 @@ class StreamingAudioPlayer {
 
         isPlaying = true
         isPaused = false
+        startTimeUs = System.nanoTime() / 1000 - currentPositionUs
         audioTrack?.play()
 
         decoderThread = Thread {
@@ -169,6 +182,7 @@ class StreamingAudioPlayer {
         if (!isPlaying || isPaused) return
 
         isPaused = true
+        pausedTimeUs = getCurrentPositionUs()
         audioTrack?.pause()
         Log.d(TAG, "⏸️ Pausado")
     }
@@ -176,10 +190,17 @@ class StreamingAudioPlayer {
     fun stop() {
         isPlaying = false
         isPaused = false
+        isSeeking = false
+        currentPositionUs = 0L
+        startTimeUs = 0L
+        pausedTimeUs = 0L
 
         audioTrack?.stop()
         decoderThread?.interrupt()
         decoderThread = null
+
+        // Resetar extractor para o início
+        extractor?.seekTo(0, MediaExtractor.SEEK_TO_CLOSEST_SYNC)
 
         Log.d(TAG, "⏹️ Parado")
     }
@@ -217,6 +238,11 @@ class StreamingAudioPlayer {
 
         try {
             while (isPlaying && !isEOS && !Thread.interrupted()) {
+                // Pausar durante seek
+                while (isSeeking && isPlaying) {
+                    Thread.sleep(10)
+                }
+
                 while (isPaused && isPlaying) {
                     Thread.sleep(100)
                 }
@@ -246,6 +272,12 @@ class StreamingAudioPlayer {
 
                 val outputIndex = codec!!.dequeueOutputBuffer(bufferInfo, timeoutUs)
                 if (outputIndex >= 0) {
+                    // Verificar se estamos durante seek
+                    if (isSeeking) {
+                        codec!!.releaseOutputBuffer(outputIndex, false)
+                        continue
+                    }
+
                     val outputBuffer = codec!!.getOutputBuffer(outputIndex)!!
 
                     outputBuffer.position(bufferInfo.offset)
@@ -255,10 +287,28 @@ class StreamingAudioPlayer {
                     outputBuffer.order(ByteOrder.nativeOrder())
                     outputBuffer.asShortBuffer().get(pcmData)
 
-                    // Aplicar Haas Effect
+                    // Aplicar Haas Effect (SEMPRE ATIVO)
                     haasProcessor?.process(pcmData)
 
-                    audioTrack?.write(pcmData, 0, pcmData.size)
+                    // Escrever no audio track
+                    try {
+                        var written = 0
+                        while (written < pcmData.size && isPlaying && !isSeeking) {
+                            val result = audioTrack?.write(pcmData, written, pcmData.size - written) ?: 0
+                            if (result > 0) {
+                                written += result
+                            } else {
+                                Thread.sleep(1)
+                            }
+                        }
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Erro ao escrever no audio track", e)
+                    }
+
+                    // Atualizar posição atual
+                    if (bufferInfo.presentationTimeUs > 0) {
+                        currentPositionUs = bufferInfo.presentationTimeUs
+                    }
 
                     codec!!.releaseOutputBuffer(outputIndex, false)
 
@@ -281,18 +331,95 @@ class StreamingAudioPlayer {
         }
     }
 
+    // Métodos para seek
+    fun seekTo(positionMs: Long) {
+        if (extractor == null || codec == null) return
+
+        try {
+            isSeeking = true
+
+            val positionUs = (positionMs * 1000).coerceAtMost(durationMs * 1000 - 100000)
+
+            codec?.flush()
+            extractor?.seekTo(positionUs, MediaExtractor.SEEK_TO_CLOSEST_SYNC)
+
+            currentPositionUs = positionUs
+            startTimeUs = System.nanoTime() / 1000 - positionUs
+            pausedTimeUs = positionUs
+
+            Thread.sleep(50)
+            isSeeking = false
+
+            Log.d(TAG, "⏩ Seek para: ${positionMs}ms")
+        } catch (e: Exception) {
+            isSeeking = false
+            Log.e(TAG, "Erro no seek", e)
+        }
+    }
+
+    fun getCurrentPosition(): Long {
+        return if (isPlaying && !isPaused && !isSeeking) {
+            val currentTimeUs = System.nanoTime() / 1000
+            (currentTimeUs - startTimeUs).coerceIn(0, durationMs * 1000)
+        } else if (isPaused) {
+            pausedTimeUs
+        } else {
+            currentPositionUs
+        }
+    }
+
+    fun getCurrentPositionMs(): Int {
+        return (getCurrentPosition() / 1000).toInt()
+    }
+
     // Getters
-    fun isPlaying(): Boolean = isPlaying && !isPaused
+    fun isPlaying(): Boolean = isPlaying && !isPaused && !isSeeking
     fun getDuration(): Long = durationMs
+    fun getDurationMs(): Int = durationMs.toInt()
     fun getSampleRate(): Int = sampleRate
     fun getChannelCount(): Int = channelCount
 
-    // Haas Effect
+    // Haas Effect - SEMPRE ATIVO, SÓ MUDA O DELAY
     fun setHaasDelay(delayMs: Int) {
-        pendingHaasDelay = delayMs // GUARDAR PARA PRÓXIMA MÚSICA
+        pendingHaasDelay = delayMs
         haasProcessor?.setDelayMs(delayMs)
-        haasProcessor?.setEnabled(delayMs > 0)
+        Log.d(TAG, "🎧 Haas delay atualizado: ${delayMs}ms")
     }
 
     fun getHaasDelay(): Int = pendingHaasDelay
+
+    // Método auxiliar interno
+    private fun getCurrentPositionUs(): Long {
+        return if (isPlaying && !isPaused && !isSeeking) {
+            System.nanoTime() / 1000 - startTimeUs
+        } else {
+            currentPositionUs
+        }
+    }
+}
+
+// SmoothHaasProcessor para transições suaves
+class SmoothHaasProcessor(private val sampleRate: Int) {
+    private val haasProcessor = HaasProcessor(sampleRate)
+    private var currentDelay = 0
+    private var targetDelay = 0
+
+    init {
+        // SEMPRE ATIVO desde o início
+        haasProcessor.setEnabled(true)
+        haasProcessor.setDelayMs(0)
+    }
+
+    fun setDelayMs(delayMs: Int) {
+        targetDelay = delayMs
+
+        // Transição instantânea para evitar cliques
+        // Como o processador já está ativo, mudar o delay não causa clique
+        currentDelay = delayMs
+        haasProcessor.setDelayMs(delayMs)
+    }
+
+    fun process(data: ShortArray) {
+        haasProcessor.process(data)
+    }
 }
