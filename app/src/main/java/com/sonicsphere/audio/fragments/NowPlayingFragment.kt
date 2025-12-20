@@ -27,6 +27,8 @@ class NowPlayingFragment : Fragment() {
     private var currentAlbumArt: Bitmap? = null
     private var lastMusicPath: String? = null
     private var isSeeking = false
+    private var isAdjustingPitch = false
+    private var isAdjustingSpeed = false
 
     override fun onCreateView(
         inflater: LayoutInflater,
@@ -41,8 +43,7 @@ class NowPlayingFragment : Fragment() {
         super.onViewCreated(view, savedInstanceState)
         setupUI()
         setupControls()
-
-        // HAAS JÁ ESTÁ SEMPRE ATIVO, SÓ VERIFICAR
+        setupAdvancedControls()
         verifyHaasState()
     }
 
@@ -64,9 +65,8 @@ class NowPlayingFragment : Fragment() {
         } else {
             updateMusicInfo()
             updateControlStates()
+            updateAdvancedControlStates()
             startSeekbarUpdate()
-
-            // HAAS JÁ ESTÁ SEMPRE ATIVO
             verifyHaasState()
         }
     }
@@ -75,9 +75,8 @@ class NowPlayingFragment : Fragment() {
         isServiceReady = true
         updateMusicInfo()
         updateControlStates()
+        updateAdvancedControlStates()
         startSeekbarUpdate()
-
-        // HAAS JÁ ESTÁ SEMPRE ATIVO
         verifyHaasState()
     }
 
@@ -109,7 +108,6 @@ class NowPlayingFragment : Fragment() {
 
     private fun setupControls() {
         binding.btnPrevious.setOnClickListener {
-            // USAR O NOVO MÉTODO COM THRESHOLD DE 5 SEGUNDOS
             getMusicService()?.handlePreviousWithThreshold()
             handler.postDelayed({
                 updateMusicInfo()
@@ -148,7 +146,102 @@ class NowPlayingFragment : Fragment() {
         }
     }
 
-    // VERIFICAR ESTADO DO HAAS (AGORA SEMPRE ATIVO)
+    private fun setupAdvancedControls() {
+        // Botão Reverse
+        binding.btnReverse.setOnClickListener {
+            val currentReverse = getMusicService()?.isReversed() ?: false
+            val newReverse = !currentReverse
+            getMusicService()?.setReverse(newReverse)
+            updateReverseButton(newReverse)
+        }
+
+        // SeekBar de Pitch (-12 a +12 semitons)
+        binding.seekBarPitch.max = 24 // -12 a +12 = 24 posições
+        binding.seekBarPitch.progress = 12 // 0 semitons no centro
+
+        binding.seekBarPitch.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
+                if (fromUser) {
+                    val semitones = progress - 12 // -12 a +12
+                    binding.txtPitch.text = String.format("%+d semitons", semitones)
+                }
+            }
+
+            override fun onStartTrackingTouch(seekBar: SeekBar?) {
+                isAdjustingPitch = true
+            }
+
+            override fun onStopTrackingTouch(seekBar: SeekBar?) {
+                isAdjustingPitch = false
+                val semitones = (seekBar?.progress ?: 12) - 12
+                getMusicService()?.setPitch(semitones)
+                Log.d("NowPlayingFragment", "🎵 Pitch definido: $semitones semitons")
+            }
+        })
+
+        // SeekBar de Speed (25% a 250% = 0.25x a 2.5x)
+        binding.seekBarSpeed.max = 225 // 0 a 225 = 0.25x a 2.5x
+        binding.seekBarSpeed.progress = 75 // 1.0x no centro
+
+        binding.seekBarSpeed.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
+                if (fromUser) {
+                    val speedFactor = (progress + 25) / 100f // 0.25 a 2.5
+                    binding.txtSpeed.text = String.format("%.2fx", speedFactor)
+                }
+            }
+
+            override fun onStartTrackingTouch(seekBar: SeekBar?) {
+                isAdjustingSpeed = true
+            }
+
+            override fun onStopTrackingTouch(seekBar: SeekBar?) {
+                isAdjustingSpeed = false
+                val speedFactor = ((seekBar?.progress ?: 75) + 25) / 100f
+                getMusicService()?.setSpeed(speedFactor)
+                Log.d("NowPlayingFragment", "⚡ Velocidade definida: ${speedFactor}x")
+            }
+        })
+
+        // Botões de reset
+        binding.btnResetPitch.setOnClickListener {
+            binding.seekBarPitch.progress = 12
+            getMusicService()?.setPitch(0)
+            binding.txtPitch.text = "0 semitons"
+        }
+
+        binding.btnResetSpeed.setOnClickListener {
+            binding.seekBarSpeed.progress = 75
+            getMusicService()?.setSpeed(1.0f)
+            binding.txtSpeed.text = "1.00x"
+        }
+    }
+
+    private fun updateAdvancedControlStates() {
+        val service = getMusicService() ?: return
+
+        // Atualizar Reverse
+        val isReversed = service.isReversed()
+        updateReverseButton(isReversed)
+
+        // Atualizar Pitch
+        val pitch = service.getPitch()
+        binding.seekBarPitch.progress = pitch + 12
+        binding.txtPitch.text = String.format("%+d semitons", pitch)
+
+        // Atualizar Speed
+        val speed = service.getSpeed()
+        val speedProgress = ((speed * 100) - 25).toInt()
+        binding.seekBarSpeed.progress = speedProgress.coerceIn(0, 225)
+        binding.txtSpeed.text = String.format("%.2fx", speed)
+    }
+
+    private fun updateReverseButton(isReversed: Boolean) {
+        val colorRes = if (isReversed) R.color.spotify_green else R.color.gray
+        val color = ContextCompat.getColor(requireContext(), colorRes)
+        binding.btnReverse.setColorFilter(color)
+    }
+
     private fun verifyHaasState() {
         val service = getMusicService()
         val currentHaasDelay = service?.getHaasDelay() ?: 0
@@ -222,7 +315,6 @@ class NowPlayingFragment : Fragment() {
             binding.artistName.text = currentMusic.artist
             binding.albumName.text = currentMusic.album
 
-            // Só recarregar se mudou de música
             if (lastMusicPath != currentMusic.path) {
                 lastMusicPath = currentMusic.path
                 loadMetadataAndAlbumArt(currentMusic.path)
@@ -246,12 +338,10 @@ class NowPlayingFragment : Fragment() {
                 val metadata = AlbumArtExtractor.getMetadata(musicPath)
                 activity?.runOnUiThread {
                     if (metadata != null) {
-                        // Atualizar com metadados reais
                         binding.songTitle.text = metadata.title ?: binding.songTitle.text
                         binding.artistName.text = metadata.artist ?: binding.artistName.text
                         binding.albumName.text = metadata.album ?: binding.albumName.text
 
-                        // Atualizar capa do álbum
                         if (metadata.albumArt != null) {
                             binding.albumArt.setImageBitmap(metadata.albumArt)
                             currentAlbumArt = metadata.albumArt

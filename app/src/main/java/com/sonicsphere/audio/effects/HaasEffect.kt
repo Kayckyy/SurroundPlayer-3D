@@ -6,9 +6,9 @@ class HaasEffect(audioSessionId: Int) {
 
     companion object {
         const val HAAS_OFF = 0
-        const val HAAS_SHORT = 500    // 500ms delay
-        const val HAAS_MEDIUM = 800   // 800ms delay
-        const val HAAS_LONG = 1000     // 1000ms delay
+        const val HAAS_SHORT = 5    // 500ms delay
+        const val HAAS_MEDIUM = 20  // 800ms delay
+        const val HAAS_LONG = 35    // 1000ms delay
     }
 
     private var virtualizer: Virtualizer? = null

@@ -12,6 +12,8 @@ import android.content.IntentFilter
 import android.content.SharedPreferences
 import android.graphics.BitmapFactory
 import android.media.AudioManager
+import android.media.audiofx.BassBoost
+import android.media.audiofx.Equalizer
 import android.media.session.MediaSession
 import android.media.session.PlaybackState
 import android.os.Binder
@@ -21,6 +23,7 @@ import android.os.IBinder
 import android.os.Looper
 import android.util.Log
 import android.view.KeyEvent
+import android.widget.RemoteViews
 import androidx.core.app.NotificationCompat
 import com.sonicsphere.audio.metadata.AlbumArtExtractor
 import com.sonicsphere.audio.MainActivity
@@ -36,6 +39,12 @@ class MusicService : Service() {
     // STREAMING PLAYER
     private var player: StreamingAudioPlayer? = null
 
+    // AUDIO EFFECTS
+    private var equalizer: Equalizer? = null
+    private var bassBoost: BassBoost? = null
+    private var isEqualizerEnabled = false
+    private var isBassBoostEnabled = false
+
     private var currentMusicIndex = 0
     private var musicList: MutableList<Music> = mutableListOf()
     private var isPrepared = false
@@ -46,11 +55,10 @@ class MusicService : Service() {
     private val channelId = "music_player_channel"
     private val notificationId = 1
 
-    // Novas variáveis para controles externos
+    // Controles externos
     private var mediaSession: MediaSession? = null
     private var audioManager: AudioManager? = null
     private var mediaButtonReceiver: BroadcastReceiver? = null
-
 
     private lateinit var prefs: SharedPreferences
     private val handler = Handler(Looper.getMainLooper())
@@ -63,6 +71,8 @@ class MusicService : Service() {
         const val ACTION_STOP = "com.sonicsphere.audio.ACTION_STOP"
         const val ACTION_TOGGLE_SHUFFLE = "com.sonicsphere.audio.ACTION_TOGGLE_SHUFFLE"
         const val ACTION_TOGGLE_REPEAT = "com.sonicsphere.audio.ACTION_TOGGLE_REPEAT"
+        const val ACTION_SEEK_FORWARD = "com.sonicsphere.audio.ACTION_SEEK_FORWARD"
+        const val ACTION_SEEK_BACKWARD = "com.sonicsphere.audio.ACTION_SEEK_BACKWARD"
 
         const val REPEAT_NONE = 0
         const val REPEAT_ALL = 1
@@ -81,7 +91,15 @@ class MusicService : Service() {
         private const val KEY_FAVORITES = "favorite_musics"
         private const val KEY_SERVICE_RUNNING = "service_running"
         private const val KEY_HAAS_DELAY = "haas_delay_ms"
+        private const val KEY_EQUALIZER_ENABLED = "equalizer_enabled"
+        private const val KEY_BASS_BOOST_ENABLED = "bass_boost_enabled"
+        private const val KEY_BASS_BOOST_STRENGTH = "bass_boost_strength"
+        private const val KEY_PITCH = "pitch_semitones"
+        private const val KEY_SPEED = "speed_factor"
+        private const val KEY_REVERSE = "reverse_enabled"
+
         private const val SEEK_THRESHOLD_MS = 5000 // 5 segundos
+        private const val SEEK_JUMP_MS = 10000 // 10 segundos para avançar/retroceder
     }
 
     inner class MusicBinder : Binder() {
@@ -125,6 +143,8 @@ class MusicService : Service() {
                 ACTION_PAUSE -> pauseMusic()
                 ACTION_NEXT -> playNext()
                 ACTION_PREVIOUS -> handlePreviousWithThreshold()
+                ACTION_SEEK_FORWARD -> seekForward()
+                ACTION_SEEK_BACKWARD -> seekBackward()
                 ACTION_STOP -> {
                     stopMusicCompletely()
                     return START_NOT_STICKY
@@ -135,7 +155,13 @@ class MusicService : Service() {
         }
 
         if (Intent.ACTION_MEDIA_BUTTON == intent?.action) {
-            val event = intent.getParcelableExtra<KeyEvent>(Intent.EXTRA_KEY_EVENT)
+            val event = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                intent.getParcelableExtra(Intent.EXTRA_KEY_EVENT, KeyEvent::class.java)
+            } else {
+                @Suppress("DEPRECATION")
+                intent.getParcelableExtra(Intent.EXTRA_KEY_EVENT)
+            }
+
             event?.let {
                 if (it.action == KeyEvent.ACTION_DOWN) {
                     when (it.keyCode) {
@@ -145,6 +171,8 @@ class MusicService : Service() {
                         KeyEvent.KEYCODE_MEDIA_NEXT -> playNext()
                         KeyEvent.KEYCODE_MEDIA_PREVIOUS -> handlePreviousWithThreshold()
                         KeyEvent.KEYCODE_MEDIA_STOP -> stopMusicCompletely()
+                        KeyEvent.KEYCODE_MEDIA_FAST_FORWARD -> seekForward()
+                        KeyEvent.KEYCODE_MEDIA_REWIND -> seekBackward()
                     }
                 }
             }
@@ -157,7 +185,194 @@ class MusicService : Service() {
         return START_NOT_STICKY
     }
 
-    // ========== MÉTODOS PARA CONTROLES EXTERNOS ==========
+    // ========== SEEK FORWARD/BACKWARD ==========
+
+    fun seekForward() {
+        try {
+            val currentPos = getCurrentPosition()
+            val duration = getDuration()
+            val newPos = (currentPos + SEEK_JUMP_MS).coerceAtMost(duration)
+            seekTo(newPos)
+            Log.d("MusicService", "⏩ +10s: ${formatTime(newPos)}")
+        } catch (e: Exception) {
+            Log.e("MusicService", "❌ Erro ao avançar", e)
+        }
+    }
+
+    fun seekBackward() {
+        try {
+            val currentPos = getCurrentPosition()
+            val newPos = (currentPos - SEEK_JUMP_MS).coerceAtLeast(0)
+            seekTo(newPos)
+            Log.d("MusicService", "⏪ -10s: ${formatTime(newPos)}")
+        } catch (e: Exception) {
+            Log.e("MusicService", "❌ Erro ao retroceder", e)
+        }
+    }
+
+    // ========== PITCH, SPEED, REVERSE ==========
+
+    fun setPitch(semitones: Int) {
+        player?.setPitch(semitones)
+        prefs.edit().putInt(KEY_PITCH, semitones).apply()
+        Log.d("MusicService", "🎵 Pitch: ${semitones} semitons")
+    }
+
+    fun getPitch(): Int {
+        return prefs.getInt(KEY_PITCH, 0)
+    }
+
+    fun setSpeed(speedFactor: Float) {
+        player?.setSpeed(speedFactor)
+        prefs.edit().putFloat(KEY_SPEED, speedFactor).apply()
+        Log.d("MusicService", "⚡ Velocidade: ${speedFactor}x")
+    }
+
+    fun getSpeed(): Float {
+        return prefs.getFloat(KEY_SPEED, 1.0f)
+    }
+
+    fun setReverse(enabled: Boolean) {
+        player?.setReverse(enabled)
+        prefs.edit().putBoolean(KEY_REVERSE, enabled).apply()
+        Log.d("MusicService", "🔄 Reverse: $enabled")
+    }
+
+    fun isReversed(): Boolean {
+        return prefs.getBoolean(KEY_REVERSE, false)
+    }
+
+    // ========== AUDIO EFFECTS ==========
+
+    private fun setupAudioEffects() {
+        try {
+            val audioSessionId = player?.getAudioSessionId() ?: return
+
+            // Setup Equalizer
+            equalizer = Equalizer(0, audioSessionId).apply {
+                enabled = false
+            }
+
+            // Setup Bass Boost
+            bassBoost = BassBoost(0, audioSessionId).apply {
+                enabled = false
+            }
+
+            restoreAudioEffectsSettings()
+
+            Log.d("MusicService", "✅ Efeitos de áudio configurados")
+        } catch (e: Exception) {
+            Log.e("MusicService", "❌ Erro ao configurar efeitos de áudio", e)
+        }
+    }
+
+    private fun restoreAudioEffectsSettings() {
+        // Restaurar Equalizer
+        isEqualizerEnabled = prefs.getBoolean(KEY_EQUALIZER_ENABLED, false)
+        equalizer?.enabled = isEqualizerEnabled
+
+        // Restaurar Bass Boost
+        isBassBoostEnabled = prefs.getBoolean(KEY_BASS_BOOST_ENABLED, false)
+        bassBoost?.enabled = isBassBoostEnabled
+
+        val savedStrength = prefs.getInt(KEY_BASS_BOOST_STRENGTH, 0)
+        if (savedStrength > 0) {
+            bassBoost?.setStrength(savedStrength.toShort())
+        }
+
+        // Restaurar bandas do equalizer
+        equalizer?.let { eq ->
+            for (band in 0 until eq.numberOfBands) {
+                val savedLevel = prefs.getInt("eq_band_$band", 0)
+                eq.setBandLevel(band.toShort(), savedLevel.toShort())
+            }
+        }
+    }
+
+    private fun saveAudioEffectsSettings() {
+        prefs.edit().apply {
+            putBoolean(KEY_EQUALIZER_ENABLED, isEqualizerEnabled)
+            putBoolean(KEY_BASS_BOOST_ENABLED, isBassBoostEnabled)
+
+            bassBoost?.let {
+                putInt(KEY_BASS_BOOST_STRENGTH, it.roundedStrength.toInt())
+            }
+
+            equalizer?.let { eq ->
+                for (band in 0 until eq.numberOfBands) {
+                    putInt("eq_band_$band", eq.getBandLevel(band.toShort()).toInt())
+                }
+            }
+        }.apply()
+    }
+
+    // EQUALIZER
+    fun isEqualizerEnabled(): Boolean = isEqualizerEnabled
+
+    fun setEqualizerEnabled(enabled: Boolean) {
+        isEqualizerEnabled = enabled
+        equalizer?.enabled = enabled
+        saveAudioEffectsSettings()
+        Log.d("MusicService", "🎚️ Equalizer ${if (enabled) "ativado" else "desativado"}")
+    }
+
+    fun getEqualizerNumberOfBands(): Short? = equalizer?.numberOfBands
+
+    fun getEqualizerBandLevelRange(): ShortArray? = equalizer?.bandLevelRange
+
+    fun getEqualizerCenterFreq(band: Short): Int? = equalizer?.getCenterFreq(band)
+
+    fun getEqualizerBandLevel(band: Short): Short? = equalizer?.getBandLevel(band)
+
+    fun setEqualizerBandLevel(band: Short, level: Short) {
+        equalizer?.setBandLevel(band, level)
+        saveAudioEffectsSettings()
+    }
+
+    fun getEqualizerPresetNames(): Array<String>? {
+        return try {
+            val count = equalizer?.numberOfPresets ?: return null
+            Array(count.toInt()) { index ->
+                equalizer?.getPresetName(index.toShort()) ?: "Preset $index"
+            }
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    fun setEqualizerPreset(preset: Short) {
+        try {
+            equalizer?.usePreset(preset)
+            prefs.edit().putInt("equalizer_preset", preset.toInt()).apply()
+            Log.d("MusicService", "🎚️ Preset aplicado: $preset")
+        } catch (e: Exception) {
+            Log.e("MusicService", "❌ Erro ao aplicar preset", e)
+        }
+    }
+
+    // BASS BOOST
+    fun isBassBoostEnabled(): Boolean = isBassBoostEnabled
+
+    fun setBassBoostEnabled(enabled: Boolean) {
+        isBassBoostEnabled = enabled
+        bassBoost?.enabled = enabled
+        saveAudioEffectsSettings()
+        Log.d("MusicService", "🔊 Bass Boost ${if (enabled) "ativado" else "desativado"}")
+    }
+
+    fun getBassBoostStrength(): Short? = bassBoost?.roundedStrength
+
+    fun setBassBoostStrength(strength: Short) {
+        try {
+            bassBoost?.setStrength(strength)
+            saveAudioEffectsSettings()
+            Log.d("MusicService", "🔊 Bass Boost: $strength")
+        } catch (e: Exception) {
+            Log.e("MusicService", "❌ Erro ao definir Bass Boost", e)
+        }
+    }
+
+    // ========== CONTROLES EXTERNOS ==========
 
     private fun setupMediaSession() {
         try {
@@ -190,6 +405,14 @@ class MusicService : Service() {
 
                 override fun onSeekTo(pos: Long) {
                     seekTo(pos.toInt())
+                }
+
+                override fun onFastForward() {
+                    seekForward()
+                }
+
+                override fun onRewind() {
+                    seekBackward()
                 }
             })
 
@@ -225,7 +448,13 @@ class MusicService : Service() {
         mediaButtonReceiver = object : BroadcastReceiver() {
             override fun onReceive(context: Context?, intent: Intent?) {
                 if (Intent.ACTION_MEDIA_BUTTON == intent?.action) {
-                    val event = intent.getParcelableExtra<KeyEvent>(Intent.EXTRA_KEY_EVENT)
+                    val event = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                        intent.getParcelableExtra(Intent.EXTRA_KEY_EVENT, KeyEvent::class.java)
+                    } else {
+                        @Suppress("DEPRECATION")
+                        intent.getParcelableExtra<KeyEvent>(Intent.EXTRA_KEY_EVENT)
+                    }
+
                     event?.let {
                         if (it.action == KeyEvent.ACTION_DOWN) {
                             Log.d("MusicService", "📱 Botão de mídia pressionado: ${it.keyCode}")
@@ -236,6 +465,8 @@ class MusicService : Service() {
                                 KeyEvent.KEYCODE_MEDIA_NEXT -> playNext()
                                 KeyEvent.KEYCODE_MEDIA_PREVIOUS -> handlePreviousWithThreshold()
                                 KeyEvent.KEYCODE_MEDIA_STOP -> stopMusicCompletely()
+                                KeyEvent.KEYCODE_MEDIA_FAST_FORWARD -> seekForward()
+                                KeyEvent.KEYCODE_MEDIA_REWIND -> seekBackward()
                             }
                         }
                     }
@@ -245,14 +476,14 @@ class MusicService : Service() {
 
         val filter = IntentFilter(Intent.ACTION_MEDIA_BUTTON)
 
-        // CORREÇÃO: Adicionar flag para Android 14+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             mediaButtonReceiver?.let {
-                registerReceiver(it, filter, RECEIVER_EXPORTED)
+                registerReceiver(it, filter, Context.RECEIVER_EXPORTED)
             }
         } else {
+            @Suppress("UnspecifiedRegisterReceiverFlag")
             mediaButtonReceiver?.let {
-                registerReceiver(it, filter, RECEIVER_EXPORTED)
+                registerReceiver(it, filter)
             }
         }
     }
@@ -280,9 +511,17 @@ class MusicService : Service() {
 
     fun handlePreviousWithThreshold() {
         val currentPosition = getCurrentPosition()
+        val wasPlaying = isPlaying()
 
         if (currentPosition > SEEK_THRESHOLD_MS) {
             seekTo(0)
+
+            if (wasPlaying && !isPlaying()) {
+                handler.postDelayed({
+                    resumeMusic()
+                }, 100)
+            }
+
             Log.d("MusicService", "⏪ Voltar ao início (posição: ${formatTime(currentPosition)})")
         } else {
             playPrevious()
@@ -309,7 +548,9 @@ class MusicService : Service() {
                             PlaybackState.ACTION_SKIP_TO_NEXT or
                             PlaybackState.ACTION_SKIP_TO_PREVIOUS or
                             PlaybackState.ACTION_SEEK_TO or
-                            PlaybackState.ACTION_STOP
+                            PlaybackState.ACTION_STOP or
+                            PlaybackState.ACTION_FAST_FORWARD or
+                            PlaybackState.ACTION_REWIND
                 )
                 .setState(playbackState, getCurrentPosition().toLong(), 1.0f)
 
@@ -399,71 +640,28 @@ class MusicService : Service() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
-        val previousIntent = Intent(this, MusicService::class.java).apply {
-            action = ACTION_PREVIOUS
-        }
-        val previousPendingIntent = PendingIntent.getService(
-            this, 1, previousIntent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
-
-        val playPauseIntent = Intent(this, MusicService::class.java).apply {
-            action = if (isPlaying()) ACTION_PAUSE else ACTION_PLAY
-        }
-        val playPausePendingIntent = PendingIntent.getService(
-            this, 2, playPauseIntent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
-
-        val nextIntent = Intent(this, MusicService::class.java).apply {
-            action = ACTION_NEXT
-        }
-        val nextPendingIntent = PendingIntent.getService(
-            this, 3, nextIntent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
-
-        val shuffleIntent = Intent(this, MusicService::class.java).apply {
-            action = ACTION_TOGGLE_SHUFFLE
-        }
-        val shufflePendingIntent = PendingIntent.getService(
-            this, 4, shuffleIntent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
-
-        val repeatIntent = Intent(this, MusicService::class.java).apply {
-            action = ACTION_TOGGLE_REPEAT
-        }
-        val repeatPendingIntent = PendingIntent.getService(
-            this, 5, repeatIntent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
-
-        val stopIntent = Intent(this, MusicService::class.java).apply {
-            action = ACTION_STOP
-        }
-        val stopPendingIntent = PendingIntent.getService(
-            this, 6, stopIntent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
+        // PendingIntents para controles
+        val seekBackwardIntent = createActionIntent(ACTION_SEEK_BACKWARD, 1)
+        val previousIntent = createActionIntent(ACTION_PREVIOUS, 2)
+        val playPauseIntent = createActionIntent(if (isPlaying()) ACTION_PAUSE else ACTION_PLAY, 3)
+        val nextIntent = createActionIntent(ACTION_NEXT, 4)
+        val seekForwardIntent = createActionIntent(ACTION_SEEK_FORWARD, 5)
+        val stopIntent = createActionIntent(ACTION_STOP, 6)
 
         val playPauseIcon = if (isPlaying()) R.drawable.ic_pause else R.drawable.ic_play
-        val shuffleIcon = if (isShuffling) R.drawable.ic_shuffle_on else R.drawable.ic_shuffle
-        val repeatIcon = when (repeatMode) {
-            REPEAT_ALL -> R.drawable.ic_repeat_all
-            REPEAT_ONE -> R.drawable.ic_repeat_one
-            else -> R.drawable.ic_repeat
-        }
 
-        val contentText = if (isPlaying()) {
-            "Tocando: ${music?.artist ?: "Artista desconhecido"}"
-        } else {
-            "Pausado"
+        val contentText = buildString {
+            append(music?.artist ?: "Artista desconhecido")
+            append(" • ")
+            append(formatTime(getCurrentPosition()))
+            append(" / ")
+            append(formatTime(getDuration()))
         }
 
         val notificationBuilder = NotificationCompat.Builder(this, channelId)
             .setContentTitle(music?.title ?: "SonicSphere")
             .setContentText(contentText)
+            .setSubText(if (isPlaying()) "Tocando" else "Pausado")
             .setSmallIcon(R.drawable.ic_music_note)
             .setLargeIcon(BitmapFactory.decodeResource(resources, R.drawable.album_placeholder))
             .setContentIntent(openAppPendingIntent)
@@ -471,26 +669,35 @@ class MusicService : Service() {
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .setOnlyAlertOnce(true)
             .setShowWhen(false)
-            .addAction(R.drawable.ic_skip_previous, "Anterior", previousPendingIntent)
-            .addAction(playPauseIcon, if (isPlaying()) "Pausar" else "Tocar", playPausePendingIntent)
-            .addAction(R.drawable.ic_skip_next, "Próxima", nextPendingIntent)
-            .addAction(shuffleIcon, "Embaralhar", shufflePendingIntent)
-            .addAction(repeatIcon, "Repetir", repeatPendingIntent)
-            .addAction(R.drawable.ic_stop, "Parar", stopPendingIntent)
+            .addAction(R.drawable.ic_replay_10, "−10s", seekBackwardIntent)
+            .addAction(R.drawable.ic_skip_previous, "Anterior", previousIntent)
+            .addAction(playPauseIcon, if (isPlaying()) "Pausar" else "Tocar", playPauseIntent)
+            .addAction(R.drawable.ic_skip_next, "Próxima", nextIntent)
+            .addAction(R.drawable.ic_forward_10, "+10s", seekForwardIntent)
+            .addAction(R.drawable.ic_stop1, "Parar", stopIntent)
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             notificationBuilder.setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
         }
 
-        // CORREÇÃO: Removida a linha problemática do MediaSession token
         notificationBuilder.setStyle(
             androidx.media.app.NotificationCompat.MediaStyle()
-                .setShowActionsInCompactView(0, 1, 2)
+                .setShowActionsInCompactView(1, 2, 3) // Previous, Play/Pause, Next
                 .setShowCancelButton(true)
-                .setCancelButtonIntent(stopPendingIntent)
+                .setCancelButtonIntent(stopIntent)
         )
 
         return notificationBuilder.build()
+    }
+
+    private fun createActionIntent(action: String, requestCode: Int): PendingIntent {
+        val intent = Intent(this, MusicService::class.java).apply {
+            this.action = action
+        }
+        return PendingIntent.getService(
+            this, requestCode, intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
     }
 
     private fun startNotificationUpdate() {
@@ -587,12 +794,26 @@ class MusicService : Service() {
         player?.release()
 
         val savedHaasDelay = getHaasDelay()
-        Log.d("MusicService", "🎧 Haas pré-configurado para nova música: ${savedHaasDelay}ms")
+        val savedPitch = getPitch()
+        val savedSpeed = getSpeed()
+        val savedReverse = isReversed()
+
+        Log.d("MusicService", "🎧 Preparando música com configurações salvas:")
+        Log.d("MusicService", "   Haas: ${savedHaasDelay}ms, Pitch: $savedPitch, Speed: ${savedSpeed}x, Reverse: $savedReverse")
 
         player = StreamingAudioPlayer().apply {
             onPrepared = {
                 handler.post {
                     isPrepared = true
+
+                    // Configurar efeitos de áudio
+                    setupAudioEffects()
+
+                    // Aplicar configurações salvas
+                    setHaasDelay(savedHaasDelay)
+                    setPitch(savedPitch)
+                    setSpeed(savedSpeed)
+                    setReverse(savedReverse)
 
                     Thread {
                         val metadata = AlbumArtExtractor.getMetadata(music.path)
@@ -615,7 +836,7 @@ class MusicService : Service() {
                     updateMediaSessionState()
                     saveState()
 
-                    Log.d("MusicService", "✅ Tocando: ${music.title} com Haas: ${savedHaasDelay}ms")
+                    Log.d("MusicService", "✅ Tocando: ${music.title}")
                 }
             }
 
@@ -632,7 +853,6 @@ class MusicService : Service() {
             }
         }
 
-        player?.setHaasDelay(savedHaasDelay)
         player?.prepare(music.path)
         updateNotification()
         updateMediaSessionState()
@@ -719,19 +939,31 @@ class MusicService : Service() {
     }
 
     fun seekTo(position: Int) {
-        if (isPrepared && player != null) {
-            player?.seekTo(position.toLong())
-            updateMediaSessionState()
-            Log.d("MusicService", "⏩ Seek para: ${formatTime(position)}")
+        try {
+            if (isPrepared && player != null) {
+                player?.seekTo(position.toLong())
+                updateMediaSessionState()
+                Log.d("MusicService", "⏩ Seek para: ${formatTime(position)}")
+            }
+        } catch (e: Exception) {
+            Log.e("MusicService", "❌ Erro no seekTo", e)
         }
     }
 
     fun getCurrentPosition(): Int {
-        return player?.getCurrentPositionMs() ?: 0
+        return try {
+            player?.getCurrentPositionMs() ?: 0
+        } catch (e: Exception) {
+            0
+        }
     }
 
     fun getDuration(): Int {
-        return player?.getDurationMs() ?: 0
+        return try {
+            player?.getDurationMs() ?: 0
+        } catch (e: Exception) {
+            0
+        }
     }
 
     fun toggleShuffle(): Boolean {
@@ -894,6 +1126,13 @@ class MusicService : Service() {
             mediaButtonReceiver?.let { unregisterReceiver(it) }
             mediaButtonReceiver = null
 
+            // Liberar efeitos de áudio
+            equalizer?.release()
+            equalizer = null
+
+            bassBoost?.release()
+            bassBoost = null
+
             if (!isServiceStopping) {
                 saveState()
             }
@@ -910,17 +1149,4 @@ class MusicService : Service() {
             instance = null
         }
     }
-
-    // Equalizer/BassBoost
-    fun isEqualizerEnabled(): Boolean = false
-    fun setEqualizerEnabled(enabled: Boolean) {}
-    fun getEqualizerNumberOfBands(): Short? = null
-    fun getEqualizerBandLevelRange(): ShortArray? = null
-    fun getEqualizerCenterFreq(band: Short): Int? = null
-    fun getEqualizerBandLevel(band: Short): Short? = null
-    fun setEqualizerBandLevel(band: Short, level: Short) {}
-    fun isBassBoostEnabled(): Boolean = false
-    fun setBassBoostEnabled(enabled: Boolean) {}
-    fun getBassBoostStrength(): Short? = null
-    fun setBassBoostStrength(strength: Short) {}
 }
