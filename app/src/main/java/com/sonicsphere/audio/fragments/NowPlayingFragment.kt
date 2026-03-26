@@ -379,21 +379,23 @@ class NowPlayingFragment : Fragment() {
     }
 
     private fun updateSeekbarProgress() {
-        if (isSeeking) return
+    if (isSeeking) return
 
-        val service = getMusicService()
-        val currentPosition = service?.getCurrentPosition() ?: 0
-        val duration = service?.getDuration() ?: 0
+    val service = getMusicService()
+    val currentPosition = service?.getCurrentPosition() ?: 0
+    val duration = service?.getDuration() ?: 0
 
-        if (duration > 0) {
-            binding.seekBar.max = duration
-            binding.seekBar.progress = currentPosition
-            binding.currentTime.text = formatTime(currentPosition)
-            binding.totalTime.text = formatTime(duration)
-        }
+    if (duration > 0) {
+        binding.seekBar.max = duration
+        binding.seekBar.progress = currentPosition
+        binding.currentTime.text = formatTime(currentPosition)
+        binding.totalTime.text = formatTime(duration)
+    }
 
+    if (service != null) {
         updatePlayPauseButton()
     }
+}
 
     private fun formatTime(milliseconds: Int): String {
         val totalSeconds = milliseconds / 1000
