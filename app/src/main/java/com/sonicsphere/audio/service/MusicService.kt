@@ -939,15 +939,21 @@ class MusicService : Service() {
     }
 
     fun seekTo(position: Int) {
-        try {
-            if (isPrepared && player != null) {
-                player?.seekTo(position.toLong())
-                updateMediaSessionState()
-                Log.d("MusicService", "⏩ Seek para: ${formatTime(position)}")
+    try {
+        if (isPrepared && player != null) {
+            val wasPlaying = isPlaying()
+            player?.seekTo(position.toLong())
+            if (wasPlaying) {
+                handler.postDelayed({
+                    player?.play()
+                }, 150)
             }
-        } catch (e: Exception) {
-            Log.e("MusicService", "❌ Erro no seekTo", e)
+            updateMediaSessionState()
+            Log.d("MusicService", "⏩ Seek para: ${formatTime(position)}")
         }
+    } catch (e: Exception) {
+        Log.e("MusicService", "❌ Erro no seekTo", e)
+    }
     }
 
     fun getCurrentPosition(): Int {
