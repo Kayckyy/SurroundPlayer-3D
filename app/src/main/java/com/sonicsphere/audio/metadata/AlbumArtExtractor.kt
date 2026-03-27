@@ -3,6 +3,8 @@ package com.sonicsphere.audio.metadata
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.media.MediaMetadataRetriever
+import java.io.File
+import java.io.RandomAccessFile
 
 object AlbumArtExtractor {
 
@@ -12,7 +14,6 @@ object AlbumArtExtractor {
         val album: String?,
         val duration: Long,
         val albumArt: Bitmap?,
-        // Metadados técnicos
         val bitrate: String?,
         val sampleRate: String?,
         val channels: String?,
@@ -26,21 +27,14 @@ object AlbumArtExtractor {
             retriever.setDataSource(path)
             val artwork = retriever.embeddedPicture
             retriever.release()
-
             artwork?.let {
-                val options = BitmapFactory.Options().apply {
-                    inJustDecodeBounds = true
-                }
+                val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
                 BitmapFactory.decodeByteArray(it, 0, it.size, options)
-
                 val scale = maxOf(options.outWidth, options.outHeight) / thumbnailSize
-                val finalOptions = BitmapFactory.Options().apply {
-                    inSampleSize = maxOf(1, scale)
-                }
+                val finalOptions = BitmapFactory.Options().apply { inSampleSize = maxOf(1, scale) }
                 BitmapFactory.decodeByteArray(it, 0, it.size, finalOptions)
             }
         } catch (e: Exception) {
-            e.printStackTrace()
             null
         }
     }
@@ -53,63 +47,33 @@ object AlbumArtExtractor {
             val title = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_TITLE)
             val artist = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ARTIST)
             val album = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ALBUM)
-            val durationStr = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
-            val duration = durationStr?.toLongOrNull() ?: 0L
+            val duration = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
+                ?.toLongOrNull() ?: 0L
 
-            // Metadados técnicos
             val bitrateRaw = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_BITRATE)
-            val bitrate = bitrateRaw?.toLongOrNull()?.let { bps ->
-                when {
-                    bps >= 1_000_000 -> "%.0f Mbps".format(bps / 1_000_000.0)
-                    else -> "${bps / 1000} kbps"
-                }
-            }
+                ?.toLongOrNull()
+            val bitrate = bitrateRaw?.let { "${it / 1000} kbps" }
 
-            val sampleRateRaw = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_CAPTURE_FRAMERATE)
-                ?: retriever.extractMetadata(26) // METADATA_KEY_SAMPLERATE (API 31+, fallback numérico)
-            val sampleRate = sampleRateRaw?.toFloatOrNull()?.toInt()?.let { hz ->
-                when {
-                    hz >= 1000 -> "${hz / 1000.0}".trimEnd('0').trimEnd('.') + " kHz"
-                    else -> "$hz Hz"
-                }
+            val mimeRaw = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_MIMETYPE)
+            val mimeType = when {
+                mimeRaw == null -> null
+                mimeRaw.contains("flac") -> "FLAC"
+                mimeRaw.contains("mp4") || mimeRaw.contains("aac") -> "AAC"
+                mimeRaw.contains("mpeg") || mimeRaw.contains("mp3") -> "MP3"
+                mimeRaw.contains("ogg") -> "OGG"
+                mimeRaw.contains("opus") -> "Opus"
+                mimeRaw.contains("wav") || mimeRaw.contains("wave") -> "WAV"
+                else -> mimeRaw.substringAfterLast("/").uppercase()
             }
-
-            val channelsRaw = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_CD_TRACK_NUMBER)
-            // Canais via MIME + heurística
-            val mimeType = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_MIMETYPE)
-            val channels = retriever.extractMetadata(24)?.toIntOrNull()?.let { ch ->
-                when (ch) {
-                    1 -> "Mono"
-                    2 -> "Stereo"
-                    6 -> "5.1"
-                    8 -> "7.1"
-                    else -> "$ch canais"
-                }
-            }
-
-            // Formato legível pelo MIME type
-            val format = when {
-                mimeType == null -> null
-                mimeType.contains("flac") -> "FLAC"
-                mimeType.contains("mp4") || mimeType.contains("aac") -> "AAC"
-                mimeType.contains("mpeg") || mimeType.contains("mp3") -> "MP3"
-                mimeType.contains("ogg") -> "OGG Vorbis"
-                mimeType.contains("opus") -> "Opus"
-                mimeType.contains("wav") || mimeType.contains("wave") -> "WAV"
-                else -> mimeType.substringAfterLast("/").uppercase()
-            }
-
-            // Tamanho do arquivo
-            val fileSize = try {
-                java.io.File(path).length().takeIf { it > 0 }
-            } catch (e: Exception) { null }
 
             val artwork = retriever.embeddedPicture
-            val albumArt = artwork?.let {
-                BitmapFactory.decodeByteArray(it, 0, it.size)
-            }
-
+            val albumArt = artwork?.let { BitmapFactory.decodeByteArray(it, 0, it.size) }
             retriever.release()
+
+            val fileSize = try { File(path).length().takeIf { it > 0 } } catch (e: Exception) { null }
+
+            // Leitura de cabeçalho para sample rate e canais
+            val (sampleRate, channels) = readAudioHeader(path, mimeType)
 
             MusicMetadata(
                 title = title,
@@ -120,12 +84,146 @@ object AlbumArtExtractor {
                 bitrate = bitrate,
                 sampleRate = sampleRate,
                 channels = channels,
-                mimeType = format,
+                mimeType = mimeType,
                 fileSize = fileSize
             )
         } catch (e: Exception) {
-            e.printStackTrace()
             null
+        }
+    }
+
+    private fun readAudioHeader(path: String, mimeType: String?): Pair<String?, String?> {
+        return try {
+            when (mimeType) {
+                "FLAC" -> readFlacHeader(path)
+                "WAV" -> readWavHeader(path)
+                "MP3" -> readMp3Header(path)
+                else -> Pair(null, null)
+            }
+        } catch (e: Exception) {
+            Pair(null, null)
+        }
+    }
+
+    private fun readFlacHeader(path: String): Pair<String?, String?> {
+        // FLAC: magic "fLaC" + STREAMINFO block
+        // Offset 18: sample rate (20 bits), channels (3 bits), bit depth (5 bits)
+        val raf = RandomAccessFile(path, "r")
+        return try {
+            val magic = ByteArray(4)
+            raf.read(magic)
+            if (String(magic) != "fLaC") return Pair(null, null)
+
+            // Pula o header do bloco STREAMINFO (4 bytes)
+            raf.skipBytes(4)
+
+            // Lê 8 bytes de dados do STREAMINFO
+            val info = ByteArray(8)
+            raf.read(info)
+
+            // Sample rate: bits 0-19 dos primeiros 3 bytes (offset 0 no info)
+            // info[0] << 12 | info[1] << 4 | info[2] >> 4
+            val sampleRateRaw = ((info[0].toInt() and 0xFF) shl 12) or
+                    ((info[1].toInt() and 0xFF) shl 4) or
+                    ((info[2].toInt() and 0xFF) shr 4)
+
+            // Canais: bits 20-22 = (info[2] >> 1) & 0x07, +1
+            val channelsRaw = ((info[2].toInt() and 0xFF) shr 1) and 0x07
+            val channelCount = channelsRaw + 1
+
+            val sampleRate = formatSampleRate(sampleRateRaw)
+            val channels = formatChannels(channelCount)
+
+            Pair(sampleRate, channels)
+        } finally {
+            raf.close()
+        }
+    }
+
+    private fun readWavHeader(path: String): Pair<String?, String?> {
+        // WAV: RIFF header
+        // Offset 22: num channels (2 bytes, little-endian)
+        // Offset 24: sample rate (4 bytes, little-endian)
+        val raf = RandomAccessFile(path, "r")
+        return try {
+            val header = ByteArray(28)
+            raf.read(header)
+
+            if (String(header.sliceArray(0..3)) != "RIFF") return Pair(null, null)
+            if (String(header.sliceArray(8..11)) != "WAVE") return Pair(null, null)
+
+            val channelCount = ((header[23].toInt() and 0xFF) shl 8) or (header[22].toInt() and 0xFF)
+            val sampleRateRaw = (header[24].toInt() and 0xFF) or
+                    ((header[25].toInt() and 0xFF) shl 8) or
+                    ((header[26].toInt() and 0xFF) shl 16) or
+                    ((header[27].toInt() and 0xFF) shl 24)
+
+            Pair(formatSampleRate(sampleRateRaw), formatChannels(channelCount))
+        } finally {
+            raf.close()
+        }
+    }
+
+    private fun readMp3Header(path: String): Pair<String?, String?> {
+        // MP3: procura sync word (0xFF 0xEX) nos primeiros 10KB
+        val raf = RandomAccessFile(path, "r")
+        return try {
+            val buf = ByteArray(minOf(10240, raf.length().toInt()))
+            raf.read(buf)
+
+            var i = 0
+            while (i < buf.size - 3) {
+                // Pula ID3 tag se presente
+                if (i == 0 && buf[0] == 'I'.code.toByte() &&
+                    buf[1] == 'D'.code.toByte() && buf[2] == '3'.code.toByte()) {
+                    val id3Size = ((buf[6].toInt() and 0x7F) shl 21) or
+                            ((buf[7].toInt() and 0x7F) shl 14) or
+                            ((buf[8].toInt() and 0x7F) shl 7) or
+                            (buf[9].toInt() and 0x7F)
+                    i = id3Size + 10
+                    continue
+                }
+
+                if ((buf[i].toInt() and 0xFF) == 0xFF && (buf[i + 1].toInt() and 0xE0) == 0xE0) {
+                    val b2 = buf[i + 2].toInt() and 0xFF
+                    val b3 = buf[i + 3].toInt() and 0xFF
+
+                    val srIndex = (b2 shr 2) and 0x03
+                    val channelMode = (b3 shr 6) and 0x03
+
+                    val sampleRateRaw = when (srIndex) {
+                        0 -> 44100
+                        1 -> 48000
+                        2 -> 32000
+                        else -> 0
+                    }
+
+                    val channelCount = if (channelMode == 3) 1 else 2
+
+                    if (sampleRateRaw > 0) {
+                        return Pair(formatSampleRate(sampleRateRaw), formatChannels(channelCount))
+                    }
+                }
+                i++
+            }
+            Pair(null, null)
+        } finally {
+            raf.close()
+        }
+    }
+
+    private fun formatSampleRate(hz: Int): String? {
+        if (hz <= 0) return null
+        return if (hz % 1000 == 0) "${hz / 1000} kHz" else "${hz / 1000.0} kHz"
+    }
+
+    private fun formatChannels(count: Int): String? {
+        return when (count) {
+            1 -> "Mono"
+            2 -> "Stereo"
+            6 -> "5.1"
+            8 -> "7.1"
+            else -> if (count > 0) "$count ch" else null
         }
     }
 
