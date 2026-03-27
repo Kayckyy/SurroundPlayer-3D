@@ -67,8 +67,14 @@ object AlbumArtExtractor {
             }
 
             val artwork = retriever.embeddedPicture
-            val albumArt = artwork?.let { BitmapFactory.decodeByteArray(it, 0, it.size) }
-            retriever.release()
+val albumArt = artwork?.let {
+    val opts = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+    BitmapFactory.decodeByteArray(it, 0, it.size, opts)
+    val scale = maxOf(opts.outWidth, opts.outHeight) / 96
+    val finalOpts = BitmapFactory.Options().apply { inSampleSize = maxOf(1, scale) }
+    BitmapFactory.decodeByteArray(it, 0, it.size, finalOpts)
+}
+retriever.release()
 
             val fileSize = try { File(path).length().takeIf { it > 0 } } catch (e: Exception) { null }
 
