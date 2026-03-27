@@ -20,6 +20,9 @@ jobs:
       - name: Permissão ao gradlew
         run: chmod +x ./gradlew
 
+      - name: Clean
+        run: ./gradlew clean
+
       - name: Build Debug APK
         run: ./gradlew assembleDebug --info 2>&1 | tail -100
   
