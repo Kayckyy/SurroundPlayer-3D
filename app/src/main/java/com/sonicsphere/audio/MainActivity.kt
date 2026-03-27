@@ -59,6 +59,9 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
+        // Remove ActionBar programaticamente caso o tema ainda não tenha sido aplicado
+        supportActionBar?.hide()
+
         if (!isTaskRoot) {
             val intent = intent
             if (intent.hasCategory(Intent.CATEGORY_LAUNCHER) && intent.action == Intent.ACTION_MAIN) {
@@ -87,7 +90,6 @@ class MainActivity : AppCompatActivity() {
                 switchToNowPlayingTab()
             }
         } else {
-            // VERIFICAR SE HÁ ESTADO SALVO ANTES DE INICIAR SERVICE
             val prefs = getSharedPreferences("music_prefs", Context.MODE_PRIVATE)
             val wasPlaying = prefs.getBoolean("is_playing", false)
             val hasLastMusic = prefs.getString("last_music_path", "")?.isNotEmpty() == true
@@ -95,7 +97,6 @@ class MainActivity : AppCompatActivity() {
             if (wasPlaying && hasLastMusic) {
                 startMusicService()
             }
-            // SE NÃO HAVIA MÚSICA TOCANDO, NÃO INICIAR SERVICE AUTOMATICAMENTE
         }
     }
 
@@ -104,11 +105,19 @@ class MainActivity : AppCompatActivity() {
         binding.viewPager.adapter = adapter
 
         TabLayoutMediator(binding.tabLayout, binding.viewPager) { tab, position ->
-            tab.text = when(position) {
-                0 -> "Now Playing"
-                1 -> "Explorar"
-                2 -> "Settings"
-                else -> null
+            when (position) {
+                0 -> {
+                    tab.text = "Player"
+                    tab.setIcon(R.drawable.ic_music_note)
+                }
+                1 -> {
+                    tab.text = "Arquivos"
+                    tab.setIcon(R.drawable.ic_folder)
+                }
+                2 -> {
+                    tab.text = "Configurações"
+                    tab.setIcon(R.drawable.ic_settings)
+                }
             }
         }.attach()
     }
@@ -176,8 +185,6 @@ class MainActivity : AppCompatActivity() {
 
         if (isFromNotification || shouldRestorePlayback) {
             switchToNowPlayingTab()
-
-            // Se tem música e veio para restaurar reprodução, garantir que está pronto
             if (musicService?.hasMusic() == true) {
                 notifyFragmentsServiceReady()
             }
