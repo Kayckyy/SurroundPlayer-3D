@@ -28,7 +28,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical"
-            android:layout_marginBottom="8dp">
+            android:layout_marginBottom="4dp">
 
             <TextView
                 android:id="@+id/songTitle"
@@ -38,7 +38,7 @@
                 android:textColor="@color/white"
                 android:textSize="22sp"
                 android:textStyle="bold"
-                android:fontFamily="@font/nunito"
+                android:fontFamily="sans-serif-medium"
                 android:gravity="center"
                 android:layout_marginBottom="4dp"
                 android:ellipsize="marquee"
@@ -51,7 +51,7 @@
                 android:text="Artist Name"
                 android:textColor="@color/gray_light"
                 android:textSize="15sp"
-                android:fontFamily="@font/nunito"
+                android:fontFamily="sans-serif"
                 android:gravity="center"
                 android:layout_marginBottom="2dp" />
 
@@ -62,7 +62,7 @@
                 android:text="Album Name"
                 android:textColor="@color/gray"
                 android:textSize="13sp"
-                android:fontFamily="@font/nunito"
+                android:fontFamily="sans-serif"
                 android:gravity="center" />
 
         </LinearLayout>
@@ -73,12 +73,11 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_gravity="center_horizontal"
-            android:layout_marginTop="4dp"
+            android:layout_marginTop="8dp"
             android:layout_marginBottom="8dp"
             android:text="▾ detalhes"
             android:textColor="@color/gray"
             android:textSize="12sp"
-            android:fontFamily="@font/nunito"
             android:padding="8dp" />
 
         <!-- Metadados técnicos -->
@@ -98,7 +97,6 @@
                 android:layout_height="wrap_content"
                 android:textColor="@color/gray_light"
                 android:textSize="12sp"
-                android:fontFamily="@font/nunito"
                 android:layout_marginBottom="2dp" />
 
             <TextView
@@ -107,7 +105,6 @@
                 android:layout_height="wrap_content"
                 android:textColor="@color/gray_light"
                 android:textSize="12sp"
-                android:fontFamily="@font/nunito"
                 android:layout_marginBottom="2dp" />
 
             <TextView
@@ -116,7 +113,6 @@
                 android:layout_height="wrap_content"
                 android:textColor="@color/gray_light"
                 android:textSize="12sp"
-                android:fontFamily="@font/nunito"
                 android:layout_marginBottom="2dp" />
 
             <TextView
@@ -125,7 +121,6 @@
                 android:layout_height="wrap_content"
                 android:textColor="@color/gray_light"
                 android:textSize="12sp"
-                android:fontFamily="@font/nunito"
                 android:layout_marginBottom="2dp" />
 
             <TextView
@@ -133,8 +128,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:textColor="@color/gray_light"
-                android:textSize="12sp"
-                android:fontFamily="@font/nunito" />
+                android:textSize="12sp" />
 
         </LinearLayout>
 
@@ -152,8 +146,7 @@
                 android:layout_height="wrap_content"
                 android:text="0:00"
                 android:textColor="@color/gray"
-                android:textSize="12sp"
-                android:fontFamily="@font/nunito" />
+                android:textSize="12sp" />
 
             <SeekBar
                 android:id="@+id/seekBar"
@@ -174,8 +167,7 @@
                 android:layout_height="wrap_content"
                 android:text="0:00"
                 android:textColor="@color/gray"
-                android:textSize="12sp"
-                android:fontFamily="@font/nunito" />
+                android:textSize="12sp" />
 
         </LinearLayout>
 
@@ -186,7 +178,7 @@
             android:orientation="horizontal"
             android:gravity="center"
             android:layout_marginTop="16dp"
-            android:layout_marginBottom="16dp">
+            android:layout_marginBottom="24dp">
 
             <ImageButton
                 android:id="@+id/btnShuffle"
