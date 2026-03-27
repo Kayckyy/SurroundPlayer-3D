@@ -13,7 +13,8 @@ object AlbumArtExtractor {
         val artist: String?,
         val album: String?,
         val duration: Long,
-        val albumArt: Bitmap?,
+        val albumArt: Bitmap?,         // Alta qualidade — para NowPlaying
+        val albumArtThumb: Bitmap?,    // 96px — para listas
         val bitrate: String?,
         val sampleRate: String?,
         val channels: String?,
@@ -66,17 +67,22 @@ object AlbumArtExtractor {
                 else -> mimeRaw.substringAfterLast("/").uppercase()
             }
 
-            // Thumbnail já escalado para evitar OOM
             val artwork = retriever.embeddedPicture
+            retriever.release()
+
+            // Alta qualidade para NowPlaying
             val albumArt = artwork?.let {
+                BitmapFactory.decodeByteArray(it, 0, it.size)
+            }
+
+            // Thumbnail 96px para listas
+            val albumArtThumb = artwork?.let {
                 val opts = BitmapFactory.Options().apply { inJustDecodeBounds = true }
                 BitmapFactory.decodeByteArray(it, 0, it.size, opts)
                 val scale = maxOf(opts.outWidth, opts.outHeight) / 96
                 val finalOpts = BitmapFactory.Options().apply { inSampleSize = maxOf(1, scale) }
                 BitmapFactory.decodeByteArray(it, 0, it.size, finalOpts)
             }
-
-            retriever.release()
 
             val fileSize = try { File(path).length().takeIf { it > 0 } } catch (e: Exception) { null }
 
@@ -88,6 +94,7 @@ object AlbumArtExtractor {
                 album = album,
                 duration = duration,
                 albumArt = albumArt,
+                albumArtThumb = albumArtThumb,
                 bitrate = bitrate,
                 sampleRate = sampleRate,
                 channels = channels,
@@ -113,23 +120,35 @@ object AlbumArtExtractor {
     }
 
     private fun readFlacHeader(path: String): Pair<String?, String?> {
+        // Estrutura FLAC STREAMINFO:
+        // 4 bytes: "fLaC"
+        // 4 bytes: block header (tipo + tamanho)
+        // 2 bytes: min block size
+        // 2 bytes: max block size
+        // 3 bytes: min frame size
+        // 3 bytes: max frame size
+        // -- offset 18 desde o início --
+        // 20 bits: sample rate
+        // 3 bits:  channels - 1
+        // 5 bits:  bit depth - 1
         val raf = RandomAccessFile(path, "r")
         return try {
             val magic = ByteArray(4)
             raf.read(magic)
             if (String(magic) != "fLaC") return Pair(null, null)
 
-            raf.skipBytes(4)
+            // block header (4) + min block (2) + max block (2) + min frame (3) + max frame (3) = 14
+            raf.skipBytes(14)
 
-            val info = ByteArray(8)
-            raf.read(info)
+            val b0 = raf.read() and 0xFF
+            val b1 = raf.read() and 0xFF
+            val b2 = raf.read() and 0xFF
 
-            val sampleRateRaw = ((info[0].toInt() and 0xFF) shl 12) or
-                    ((info[1].toInt() and 0xFF) shl 4) or
-                    ((info[2].toInt() and 0xFF) shr 4)
+            // Sample rate: primeiros 20 bits
+            val sampleRateRaw = (b0 shl 12) or (b1 shl 4) or (b2 shr 4)
 
-            val channelsRaw = ((info[2].toInt() and 0xFF) shr 1) and 0x07
-            val channelCount = channelsRaw + 1
+            // Channels: bits 20-22, +1
+            val channelCount = ((b2 shr 1) and 0x07) + 1
 
             Pair(formatSampleRate(sampleRateRaw), formatChannels(channelCount))
         } finally {
@@ -206,7 +225,7 @@ object AlbumArtExtractor {
 
     private fun formatSampleRate(hz: Int): String? {
         if (hz <= 0) return null
-        return if (hz % 1000 == 0) "${hz / 1000} kHz" else "${hz / 1000.0} kHz"
+        return if (hz % 1000 == 0) "${hz / 1000} kHz" else "${"%.1f".format(hz / 1000.0)} kHz"
     }
 
     private fun formatChannels(count: Int): String? {
