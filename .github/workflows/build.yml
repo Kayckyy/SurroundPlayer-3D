@@ -24,8 +24,8 @@ jobs:
         run: ./gradlew clean
 
       - name: Build Debug APK
-        run: ./gradlew assembleDebug --debug 2>&1 | grep "^e:" | head -30
-  
+        run: ./gradlew assembleDebug 2>&1 | grep -E "error:|^e:" | head -50
+        
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
