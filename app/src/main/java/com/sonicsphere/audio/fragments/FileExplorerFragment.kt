@@ -29,6 +29,8 @@ class FileExplorerFragment : Fragment() {
 
     // Cache de thumbnails para evitar recarregar
     private val thumbnailCache = mutableMapOf<String, Bitmap?>()
+    private val thumbnailCache = mutableMapOf<String, Bitmap?>()
+    private val metaCache = mutableMapOf<String, String>()
 
     override fun onCreateView(
         inflater: LayoutInflater,
@@ -80,9 +82,10 @@ class FileExplorerFragment : Fragment() {
     }
 
     fun refreshCurrentDirectory() {
-        thumbnailCache.clear()
-        loadDirectory(currentPath)
-        Toast.makeText(requireContext(), "Atualizado", Toast.LENGTH_SHORT).show()
+    thumbnailCache.clear()
+    metaCache.clear()
+    loadDirectory(currentPath)
+    Toast.makeText(requireContext(), "Atualizado", Toast.LENGTH_SHORT).show()
     }
 
     private fun loadDirectory(path: String) {
@@ -152,125 +155,112 @@ class FileExplorerFragment : Fragment() {
         }
 
         override fun onBindViewHolder(holder: FileViewHolder, position: Int) {
-            val item = items[position]
-            holder.binding.apply {
-                fileName.text = item.name
+    val item = items[position]
+    holder.binding.apply {
+        fileName.text = item.name
+        fileMeta.visibility = View.GONE
 
-                val isFavorite = if (item.isMusicFile) {
-                    getMusicService()?.isFavorite(item.path) ?: false
-                } else {
-                    false
+        val isFavorite = if (item.isMusicFile) {
+            getMusicService()?.isFavorite(item.path) ?: false
+        } else false
+
+        if (item.isMusicFile) {
+            fileIcon.setImageResource(R.drawable.ic_music_note)
+            fileIcon.scaleType = android.widget.ImageView.ScaleType.FIT_CENTER
+            fileIcon.clearColorFilter()
+
+            if (thumbnailCache.containsKey(item.path)) {
+                val cached = thumbnailCache[item.path]
+                if (cached != null) {
+                    fileIcon.setImageBitmap(cached)
+                    fileIcon.scaleType = android.widget.ImageView.ScaleType.CENTER_CROP
                 }
+            } else {
+                loadThumbnailAndMeta(item.path, holder)
+            }
 
-                // Configurar ícone/thumbnail
-                if (item.isMusicFile) {
-                    // Sempre mostrar placeholder primeiro
-                    fileIcon.setImageResource(R.drawable.ic_music_note)
+            // Mostrar metadados do cache se disponível
+            metaCache[item.path]?.let { meta ->
+                fileMeta.text = meta
+                fileMeta.visibility = View.VISIBLE
+            }
 
-                    // Verificar se já tem no cache
-                    if (thumbnailCache.containsKey(item.path)) {
-                        val cachedThumbnail = thumbnailCache[item.path]
-                        if (cachedThumbnail != null) {
-                            fileIcon.setImageBitmap(cachedThumbnail)
-                            fileIcon.scaleType = android.widget.ImageView.ScaleType.CENTER_CROP
-                        } else {
-                            // Sem thumbnail, usar ícone apropriado
-                            fileIcon.setImageResource(
-                                if (isFavorite) R.drawable.ic_favorite_filled else R.drawable.ic_music_note
-                            )
-                            fileIcon.scaleType = android.widget.ImageView.ScaleType.FIT_CENTER
-                        }
-                    } else {
-                        // Carregar thumbnail em background
-                        fileIcon.setImageResource(
-                            if (isFavorite) R.drawable.ic_favorite_filled else R.drawable.ic_music_note
-                        )
-                        fileIcon.scaleType = android.widget.ImageView.ScaleType.FIT_CENTER
+        } else if (item.isDirectory) {
+            fileIcon.setImageResource(R.drawable.ic_folder)
+            fileIcon.scaleType = android.widget.ImageView.ScaleType.FIT_CENTER
+        } else {
+            fileIcon.setImageResource(R.drawable.ic_file)
+            fileIcon.scaleType = android.widget.ImageView.ScaleType.FIT_CENTER
+        }
 
-                        loadThumbnail(item.path, holder)
-                    }
-                } else if (item.isDirectory) {
-                    fileIcon.setImageResource(R.drawable.ic_folder)
-                    fileIcon.scaleType = android.widget.ImageView.ScaleType.FIT_CENTER
-                } else {
-                    fileIcon.setImageResource(R.drawable.ic_file)
-                    fileIcon.scaleType = android.widget.ImageView.ScaleType.FIT_CENTER
+        fileName.setTextColor(
+            ContextCompat.getColor(requireContext(),
+                if (item.isMusicFile && isFavorite) R.color.spotify_green else R.color.white)
+        )
+
+        root.setOnClickListener {
+            if (item.isDirectory) loadDirectory(item.path)
+            else if (item.isMusicFile) playMusicFile(item.path)
+        }
+
+        root.setOnLongClickListener {
+            if (item.isMusicFile) {
+                val isNowFavorite = getMusicService()?.toggleFavorite(item.path) ?: false
+                if (thumbnailCache[item.path] == null) {
+                    fileIcon.setImageResource(
+                        if (isNowFavorite) R.drawable.ic_favorite_filled else R.drawable.ic_music_note
+                    )
                 }
+                fileName.setTextColor(ContextCompat.getColor(requireContext(),
+                    if (isNowFavorite) R.color.spotify_green else R.color.white))
+                Toast.makeText(requireContext(),
+                    if (isNowFavorite) "Adicionado aos favoritos" else "Removido dos favoritos",
+                    Toast.LENGTH_SHORT).show()
+                true
+            } else false
+        }
+    }
+}
 
-                val textColor = if (item.isMusicFile) {
-                    if (isFavorite) {
-                        ContextCompat.getColor(requireContext(), R.color.spotify_green)
-                    } else {
-                        ContextCompat.getColor(requireContext(), R.color.white)
-                    }
-                } else {
-                    ContextCompat.getColor(requireContext(), R.color.white)
+private fun loadThumbnailAndMeta(musicPath: String, holder: FileViewHolder) {
+    Thread {
+        try {
+            val metadata = AlbumArtExtractor.getMetadata(musicPath)
+
+            // Thumbnail
+            val thumb = metadata?.albumArt?.let { bmp ->
+                val scale = maxOf(bmp.width, bmp.height) / 96
+                if (scale > 1) Bitmap.createScaledBitmap(bmp, bmp.width / scale, bmp.height / scale, true)
+                else bmp
+            }
+            thumbnailCache[musicPath] = thumb
+
+            // Meta string resumida
+            val parts = listOfNotNull(
+                metadata?.mimeType,
+                metadata?.bitrate,
+                metadata?.sampleRate,
+                metadata?.channels
+            )
+            val metaStr = if (parts.isNotEmpty()) parts.joinToString(" · ") else null
+            if (metaStr != null) metaCache[musicPath] = metaStr
+
+            activity?.runOnUiThread {
+                if (thumb != null) {
+                    holder.binding.fileIcon.setImageBitmap(thumb)
+                    holder.binding.fileIcon.scaleType = android.widget.ImageView.ScaleType.CENTER_CROP
                 }
-                fileName.setTextColor(textColor)
-
-                root.setOnClickListener {
-                    if (item.isDirectory) {
-                        loadDirectory(item.path)
-                    } else if (item.isMusicFile) {
-                        playMusicFile(item.path)
-                    }
-                }
-
-                root.setOnLongClickListener {
-                    if (item.isMusicFile) {
-                        val isNowFavorite = getMusicService()?.toggleFavorite(item.path) ?: false
-
-                        // Se não tem thumbnail, voltar para o ícone
-                        if (!thumbnailCache.containsKey(item.path) || thumbnailCache[item.path] == null) {
-                            fileIcon.setImageResource(
-                                if (isNowFavorite) R.drawable.ic_favorite_filled else R.drawable.ic_music_note
-                            )
-                            fileIcon.scaleType = android.widget.ImageView.ScaleType.FIT_CENTER
-                        }
-
-                        val newColor = if (isNowFavorite) {
-                            ContextCompat.getColor(requireContext(), R.color.spotify_green)
-                        } else {
-                            ContextCompat.getColor(requireContext(), R.color.white)
-                        }
-                        fileName.setTextColor(newColor)
-
-                        Toast.makeText(requireContext(),
-                            if (isNowFavorite) "Adicionado aos favoritos" else "Removido dos favoritos",
-                            Toast.LENGTH_SHORT
-                        ).show()
-
-                        true
-                    } else {
-                        false
-                    }
+                if (metaStr != null) {
+                    holder.binding.fileMeta.text = metaStr
+                    holder.binding.fileMeta.visibility = View.VISIBLE
                 }
             }
+        } catch (e: Exception) {
+            e.printStackTrace()
+            thumbnailCache[musicPath] = null
         }
-
-        private fun loadThumbnail(musicPath: String, holder: FileViewHolder) {
-            Thread {
-                try {
-                    val albumArt = AlbumArtExtractor.getAlbumArt(musicPath)
-
-                    // Adicionar ao cache
-                    thumbnailCache[musicPath] = albumArt
-
-                    // Atualizar UI
-                    activity?.runOnUiThread {
-                        if (albumArt != null) {
-                            holder.binding.fileIcon.setImageBitmap(albumArt)
-                            holder.binding.fileIcon.scaleType = android.widget.ImageView.ScaleType.CENTER_CROP
-                        }
-                        // Se não tiver thumbnail, mantém o ícone que já estava
-                    }
-                } catch (e: Exception) {
-                    e.printStackTrace()
-                    thumbnailCache[musicPath] = null
-                }
-            }.start()
-        }
-
+    }.start()
+}
         override fun getItemCount(): Int = items.size
     }
 }
