@@ -66,19 +66,20 @@ object AlbumArtExtractor {
                 else -> mimeRaw.substringAfterLast("/").uppercase()
             }
 
+            // Thumbnail já escalado para evitar OOM
             val artwork = retriever.embeddedPicture
-val albumArt = artwork?.let {
-    val opts = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-    BitmapFactory.decodeByteArray(it, 0, it.size, opts)
-    val scale = maxOf(opts.outWidth, opts.outHeight) / 96
-    val finalOpts = BitmapFactory.Options().apply { inSampleSize = maxOf(1, scale) }
-    BitmapFactory.decodeByteArray(it, 0, it.size, finalOpts)
-}
-retriever.release()
+            val albumArt = artwork?.let {
+                val opts = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                BitmapFactory.decodeByteArray(it, 0, it.size, opts)
+                val scale = maxOf(opts.outWidth, opts.outHeight) / 96
+                val finalOpts = BitmapFactory.Options().apply { inSampleSize = maxOf(1, scale) }
+                BitmapFactory.decodeByteArray(it, 0, it.size, finalOpts)
+            }
+
+            retriever.release()
 
             val fileSize = try { File(path).length().takeIf { it > 0 } } catch (e: Exception) { null }
 
-            // Leitura de cabeçalho para sample rate e canais
             val (sampleRate, channels) = readAudioHeader(path, mimeType)
 
             MusicMetadata(
@@ -112,44 +113,31 @@ retriever.release()
     }
 
     private fun readFlacHeader(path: String): Pair<String?, String?> {
-        // FLAC: magic "fLaC" + STREAMINFO block
-        // Offset 18: sample rate (20 bits), channels (3 bits), bit depth (5 bits)
         val raf = RandomAccessFile(path, "r")
         return try {
             val magic = ByteArray(4)
             raf.read(magic)
             if (String(magic) != "fLaC") return Pair(null, null)
 
-            // Pula o header do bloco STREAMINFO (4 bytes)
             raf.skipBytes(4)
 
-            // Lê 8 bytes de dados do STREAMINFO
             val info = ByteArray(8)
             raf.read(info)
 
-            // Sample rate: bits 0-19 dos primeiros 3 bytes (offset 0 no info)
-            // info[0] << 12 | info[1] << 4 | info[2] >> 4
             val sampleRateRaw = ((info[0].toInt() and 0xFF) shl 12) or
                     ((info[1].toInt() and 0xFF) shl 4) or
                     ((info[2].toInt() and 0xFF) shr 4)
 
-            // Canais: bits 20-22 = (info[2] >> 1) & 0x07, +1
             val channelsRaw = ((info[2].toInt() and 0xFF) shr 1) and 0x07
             val channelCount = channelsRaw + 1
 
-            val sampleRate = formatSampleRate(sampleRateRaw)
-            val channels = formatChannels(channelCount)
-
-            Pair(sampleRate, channels)
+            Pair(formatSampleRate(sampleRateRaw), formatChannels(channelCount))
         } finally {
             raf.close()
         }
     }
 
     private fun readWavHeader(path: String): Pair<String?, String?> {
-        // WAV: RIFF header
-        // Offset 22: num channels (2 bytes, little-endian)
-        // Offset 24: sample rate (4 bytes, little-endian)
         val raf = RandomAccessFile(path, "r")
         return try {
             val header = ByteArray(28)
@@ -171,7 +159,6 @@ retriever.release()
     }
 
     private fun readMp3Header(path: String): Pair<String?, String?> {
-        // MP3: procura sync word (0xFF 0xEX) nos primeiros 10KB
         val raf = RandomAccessFile(path, "r")
         return try {
             val buf = ByteArray(minOf(10240, raf.length().toInt()))
@@ -179,7 +166,6 @@ retriever.release()
 
             var i = 0
             while (i < buf.size - 3) {
-                // Pula ID3 tag se presente
                 if (i == 0 && buf[0] == 'I'.code.toByte() &&
                     buf[1] == 'D'.code.toByte() && buf[2] == '3'.code.toByte()) {
                     val id3Size = ((buf[6].toInt() and 0x7F) shl 21) or
