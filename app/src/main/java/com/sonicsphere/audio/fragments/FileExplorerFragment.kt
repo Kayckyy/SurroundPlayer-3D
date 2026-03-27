@@ -27,7 +27,6 @@ class FileExplorerFragment : Fragment() {
     private val musicExtensions = setOf("mp3", "wav", "ogg", "m4a", "flac", "aac", "opus")
     private var isServiceReady = false
 
-    // Cache de thumbnails para evitar recarregar
     private val thumbnailCache = mutableMapOf<String, Bitmap?>()
     private val metaCache = mutableMapOf<String, String>()
 
@@ -43,7 +42,6 @@ class FileExplorerFragment : Fragment() {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
         setupRecyclerView()
-        setupRefreshButton()
 
         val lastFolder = getMusicService()?.getCurrentFolder()
         if (!lastFolder.isNullOrEmpty() && File(lastFolder).exists()) {
@@ -57,12 +55,8 @@ class FileExplorerFragment : Fragment() {
         super.onResume()
         if (!isServiceReady) {
             val service = getMusicService()
-            if (service != null) {
-                onServiceReady()
-            }
+            if (service != null) onServiceReady()
         }
-
-        // Atualizar favoritos quando retornar ao fragment
         binding.recyclerView.adapter?.notifyDataSetChanged()
     }
 
@@ -74,17 +68,11 @@ class FileExplorerFragment : Fragment() {
         binding.recyclerView.layoutManager = LinearLayoutManager(requireContext())
     }
 
-    private fun setupRefreshButton() {
-        // Assumindo que você tem um botão de refresh no layout
-        // Se não tiver, adicione: <ImageButton android:id="@+id/btnRefresh" ... />
-        // Por enquanto, vou criar a função que você pode chamar
-    }
-
     fun refreshCurrentDirectory() {
-    thumbnailCache.clear()
-    metaCache.clear()
-    loadDirectory(currentPath)
-    Toast.makeText(requireContext(), "Atualizado", Toast.LENGTH_SHORT).show()
+        thumbnailCache.clear()
+        metaCache.clear()
+        loadDirectory(currentPath)
+        Toast.makeText(requireContext(), "Atualizado", Toast.LENGTH_SHORT).show()
     }
 
     private fun loadDirectory(path: String) {
@@ -112,8 +100,7 @@ class FileExplorerFragment : Fragment() {
     }
 
     private fun isMusicFile(file: File): Boolean {
-        val extension = file.extension.lowercase()
-        return musicExtensions.contains(extension)
+        return musicExtensions.contains(file.extension.lowercase())
     }
 
     private fun playMusicFile(filePath: String) {
@@ -128,6 +115,7 @@ class FileExplorerFragment : Fragment() {
     override fun onDestroyView() {
         super.onDestroyView()
         thumbnailCache.clear()
+        metaCache.clear()
         _binding = null
     }
 
@@ -145,118 +133,112 @@ class FileExplorerFragment : Fragment() {
             RecyclerView.ViewHolder(binding.root)
 
         override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): FileViewHolder {
-            val binding = ItemFileBinding.inflate(
-                LayoutInflater.from(parent.context),
-                parent,
-                false
-            )
+            val binding = ItemFileBinding.inflate(LayoutInflater.from(parent.context), parent, false)
             return FileViewHolder(binding)
         }
 
         override fun onBindViewHolder(holder: FileViewHolder, position: Int) {
-    val item = items[position]
-    holder.binding.apply {
-        fileName.text = item.name
-        fileMeta.visibility = View.GONE
+            val item = items[position]
+            holder.binding.apply {
+                fileName.text = item.name
+                fileMeta.visibility = View.GONE
 
-        val isFavorite = if (item.isMusicFile) {
-            getMusicService()?.isFavorite(item.path) ?: false
-        } else false
+                val isFavorite = if (item.isMusicFile) {
+                    getMusicService()?.isFavorite(item.path) ?: false
+                } else false
 
-        if (item.isMusicFile) {
-            fileIcon.setImageResource(R.drawable.ic_music_note)
-            fileIcon.scaleType = android.widget.ImageView.ScaleType.FIT_CENTER
-            fileIcon.clearColorFilter()
+                if (item.isMusicFile) {
+                    fileIcon.setImageResource(R.drawable.ic_music_note)
+                    fileIcon.scaleType = android.widget.ImageView.ScaleType.FIT_CENTER
+                    fileIcon.clearColorFilter()
 
-            if (thumbnailCache.containsKey(item.path)) {
-                val cached = thumbnailCache[item.path]
-                if (cached != null) {
-                    fileIcon.setImageBitmap(cached)
-                    fileIcon.scaleType = android.widget.ImageView.ScaleType.CENTER_CROP
+                    if (thumbnailCache.containsKey(item.path)) {
+                        val cached = thumbnailCache[item.path]
+                        if (cached != null) {
+                            fileIcon.setImageBitmap(cached)
+                            fileIcon.scaleType = android.widget.ImageView.ScaleType.CENTER_CROP
+                        }
+                    } else {
+                        loadThumbnailAndMeta(item.path, holder)
+                    }
+
+                    metaCache[item.path]?.let { meta ->
+                        fileMeta.text = meta
+                        fileMeta.visibility = View.VISIBLE
+                    }
+
+                } else if (item.isDirectory) {
+                    fileIcon.setImageResource(R.drawable.ic_folder)
+                    fileIcon.scaleType = android.widget.ImageView.ScaleType.FIT_CENTER
+                } else {
+                    fileIcon.setImageResource(R.drawable.ic_file)
+                    fileIcon.scaleType = android.widget.ImageView.ScaleType.FIT_CENTER
                 }
-            } else {
-                loadThumbnailAndMeta(item.path, holder)
-            }
 
-            // Mostrar metadados do cache se disponível
-            metaCache[item.path]?.let { meta ->
-                fileMeta.text = meta
-                fileMeta.visibility = View.VISIBLE
-            }
+                fileName.setTextColor(
+                    ContextCompat.getColor(requireContext(),
+                        if (item.isMusicFile && isFavorite) R.color.spotify_green else R.color.white)
+                )
 
-        } else if (item.isDirectory) {
-            fileIcon.setImageResource(R.drawable.ic_folder)
-            fileIcon.scaleType = android.widget.ImageView.ScaleType.FIT_CENTER
-        } else {
-            fileIcon.setImageResource(R.drawable.ic_file)
-            fileIcon.scaleType = android.widget.ImageView.ScaleType.FIT_CENTER
+                root.setOnClickListener {
+                    if (item.isDirectory) loadDirectory(item.path)
+                    else if (item.isMusicFile) playMusicFile(item.path)
+                }
+
+                root.setOnLongClickListener {
+                    if (item.isMusicFile) {
+                        val isNowFavorite = getMusicService()?.toggleFavorite(item.path) ?: false
+                        if (thumbnailCache[item.path] == null) {
+                            fileIcon.setImageResource(
+                                if (isNowFavorite) R.drawable.ic_favorite_filled else R.drawable.ic_music_note
+                            )
+                        }
+                        fileName.setTextColor(ContextCompat.getColor(requireContext(),
+                            if (isNowFavorite) R.color.spotify_green else R.color.white))
+                        Toast.makeText(requireContext(),
+                            if (isNowFavorite) "Adicionado aos favoritos" else "Removido dos favoritos",
+                            Toast.LENGTH_SHORT).show()
+                        true
+                    } else false
+                }
+            }
         }
 
-        fileName.setTextColor(
-            ContextCompat.getColor(requireContext(),
-                if (item.isMusicFile && isFavorite) R.color.spotify_green else R.color.white)
-        )
+        private fun loadThumbnailAndMeta(musicPath: String, holder: FileViewHolder) {
+            Thread {
+                try {
+                    val metadata = AlbumArtExtractor.getMetadata(musicPath)
 
-        root.setOnClickListener {
-            if (item.isDirectory) loadDirectory(item.path)
-            else if (item.isMusicFile) playMusicFile(item.path)
-        }
+                    // Thumbnail já vem escalado do getMetadata()
+                    val thumb = metadata?.albumArt
+                    thumbnailCache[musicPath] = thumb
 
-        root.setOnLongClickListener {
-            if (item.isMusicFile) {
-                val isNowFavorite = getMusicService()?.toggleFavorite(item.path) ?: false
-                if (thumbnailCache[item.path] == null) {
-                    fileIcon.setImageResource(
-                        if (isNowFavorite) R.drawable.ic_favorite_filled else R.drawable.ic_music_note
+                    val parts = listOfNotNull(
+                        metadata?.mimeType,
+                        metadata?.bitrate,
+                        metadata?.sampleRate,
+                        metadata?.channels
                     )
+                    val metaStr = if (parts.isNotEmpty()) parts.joinToString(" · ") else null
+                    if (metaStr != null) metaCache[musicPath] = metaStr
+
+                    activity?.runOnUiThread {
+                        if (thumb != null) {
+                            holder.binding.fileIcon.setImageBitmap(thumb)
+                            holder.binding.fileIcon.scaleType = android.widget.ImageView.ScaleType.CENTER_CROP
+                        }
+                        if (metaStr != null) {
+                            holder.binding.fileMeta.text = metaStr
+                            holder.binding.fileMeta.visibility = View.VISIBLE
+                        }
+                    }
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                    thumbnailCache[musicPath] = null
                 }
-                fileName.setTextColor(ContextCompat.getColor(requireContext(),
-                    if (isNowFavorite) R.color.spotify_green else R.color.white))
-                Toast.makeText(requireContext(),
-                    if (isNowFavorite) "Adicionado aos favoritos" else "Removido dos favoritos",
-                    Toast.LENGTH_SHORT).show()
-                true
-            } else false
+            }.start()
         }
-    }
-}
 
-private fun loadThumbnailAndMeta(musicPath: String, holder: FileViewHolder) {
-    Thread {
-        try {
-            val metadata = AlbumArtExtractor.getMetadata(musicPath)
-
-            // Thumbnail
-            val thumb = metadata?.albumArt
-            thumbnailCache[musicPath] = thumb
-            }
-
-            // Meta string resumida
-            val parts = listOfNotNull(
-                metadata?.mimeType,
-                metadata?.bitrate,
-                metadata?.sampleRate,
-                metadata?.channels
-            )
-            val metaStr = if (parts.isNotEmpty()) parts.joinToString(" · ") else null
-            if (metaStr != null) metaCache[musicPath] = metaStr
-
-            activity?.runOnUiThread {
-                if (thumb != null) {
-                    holder.binding.fileIcon.setImageBitmap(thumb)
-                    holder.binding.fileIcon.scaleType = android.widget.ImageView.ScaleType.CENTER_CROP
-                }
-                if (metaStr != null) {
-                    holder.binding.fileMeta.text = metaStr
-                    holder.binding.fileMeta.visibility = View.VISIBLE
-                }
-            }
-        } catch (e: Exception) {
-            e.printStackTrace()
-            thumbnailCache[musicPath] = null
-        }
-    }.start()
-}
         override fun getItemCount(): Int = items.size
     }
 }
