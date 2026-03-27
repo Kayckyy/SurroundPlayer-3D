@@ -27,8 +27,6 @@ class NowPlayingFragment : Fragment() {
     private var currentAlbumArt: Bitmap? = null
     private var lastMusicPath: String? = null
     private var isSeeking = false
-    private var isAdjustingPitch = false
-    private var isAdjustingSpeed = false
 
     override fun onCreateView(
         inflater: LayoutInflater,
@@ -43,13 +41,10 @@ class NowPlayingFragment : Fragment() {
         super.onViewCreated(view, savedInstanceState)
         setupUI()
         setupControls()
-        setupAdvancedControls()
-        verifyHaasState()
     }
 
     override fun onResume() {
         super.onResume()
-
         if (!isServiceReady) {
             val service = getMusicService()
             if (service != null) {
@@ -65,9 +60,7 @@ class NowPlayingFragment : Fragment() {
         } else {
             updateMusicInfo()
             updateControlStates()
-            updateAdvancedControlStates()
             startSeekbarUpdate()
-            verifyHaasState()
         }
     }
 
@@ -75,9 +68,7 @@ class NowPlayingFragment : Fragment() {
         isServiceReady = true
         updateMusicInfo()
         updateControlStates()
-        updateAdvancedControlStates()
         startSeekbarUpdate()
-        verifyHaasState()
     }
 
     private fun setupUI() {
@@ -144,108 +135,13 @@ class NowPlayingFragment : Fragment() {
                 updateFavoriteButton(isNowFavorite)
             }
         }
-    }
 
-    private fun setupAdvancedControls() {
-        // Botão Reverse
         binding.btnReverse.setOnClickListener {
             val currentReverse = getMusicService()?.isReversed() ?: false
             val newReverse = !currentReverse
             getMusicService()?.setReverse(newReverse)
             updateReverseButton(newReverse)
         }
-
-        // SeekBar de Pitch (-12 a +12 semitons)
-        binding.seekBarPitch.max = 24 // -12 a +12 = 24 posições
-        binding.seekBarPitch.progress = 12 // 0 semitons no centro
-
-        binding.seekBarPitch.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
-            override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
-                if (fromUser) {
-                    val semitones = progress - 12 // -12 a +12
-                    binding.txtPitch.text = String.format("%+d semitons", semitones)
-                }
-            }
-
-            override fun onStartTrackingTouch(seekBar: SeekBar?) {
-                isAdjustingPitch = true
-            }
-
-            override fun onStopTrackingTouch(seekBar: SeekBar?) {
-                isAdjustingPitch = false
-                val semitones = (seekBar?.progress ?: 12) - 12
-                getMusicService()?.setPitch(semitones)
-                Log.d("NowPlayingFragment", "🎵 Pitch definido: $semitones semitons")
-            }
-        })
-
-        // SeekBar de Speed (25% a 250% = 0.25x a 2.5x)
-        binding.seekBarSpeed.max = 225 // 0 a 225 = 0.25x a 2.5x
-        binding.seekBarSpeed.progress = 75 // 1.0x no centro
-
-        binding.seekBarSpeed.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
-            override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
-                if (fromUser) {
-                    val speedFactor = (progress + 25) / 100f // 0.25 a 2.5
-                    binding.txtSpeed.text = String.format("%.2fx", speedFactor)
-                }
-            }
-
-            override fun onStartTrackingTouch(seekBar: SeekBar?) {
-                isAdjustingSpeed = true
-            }
-
-            override fun onStopTrackingTouch(seekBar: SeekBar?) {
-                isAdjustingSpeed = false
-                val speedFactor = ((seekBar?.progress ?: 75) + 25) / 100f
-                getMusicService()?.setSpeed(speedFactor)
-                Log.d("NowPlayingFragment", "⚡ Velocidade definida: ${speedFactor}x")
-            }
-        })
-
-        // Botões de reset
-        binding.btnResetPitch.setOnClickListener {
-            binding.seekBarPitch.progress = 12
-            getMusicService()?.setPitch(0)
-            binding.txtPitch.text = "0 semitons"
-        }
-
-        binding.btnResetSpeed.setOnClickListener {
-            binding.seekBarSpeed.progress = 75
-            getMusicService()?.setSpeed(1.0f)
-            binding.txtSpeed.text = "1.00x"
-        }
-    }
-
-    private fun updateAdvancedControlStates() {
-        val service = getMusicService() ?: return
-
-        // Atualizar Reverse
-        val isReversed = service.isReversed()
-        updateReverseButton(isReversed)
-
-        // Atualizar Pitch
-        val pitch = service.getPitch()
-        binding.seekBarPitch.progress = pitch + 12
-        binding.txtPitch.text = String.format("%+d semitons", pitch)
-
-        // Atualizar Speed
-        val speed = service.getSpeed()
-        val speedProgress = ((speed * 100) - 25).toInt()
-        binding.seekBarSpeed.progress = speedProgress.coerceIn(0, 225)
-        binding.txtSpeed.text = String.format("%.2fx", speed)
-    }
-
-    private fun updateReverseButton(isReversed: Boolean) {
-        val colorRes = if (isReversed) R.color.spotify_green else R.color.gray
-        val color = ContextCompat.getColor(requireContext(), colorRes)
-        binding.btnReverse.setColorFilter(color)
-    }
-
-    private fun verifyHaasState() {
-        val service = getMusicService()
-        val currentHaasDelay = service?.getHaasDelay() ?: 0
-        Log.d("NowPlayingFragment", "🎧 Haas verificado (sempre ativo): ${currentHaasDelay}ms")
     }
 
     private fun togglePlayPause() {
@@ -263,6 +159,7 @@ class NowPlayingFragment : Fragment() {
         updatePlayPauseButton()
         updateShuffleButton(getMusicService()?.isShuffling() ?: false)
         updateRepeatButton(getMusicService()?.getRepeatMode() ?: MusicService.REPEAT_NONE)
+        updateReverseButton(getMusicService()?.isReversed() ?: false)
 
         val currentMusic = getMusicService()?.getCurrentMusic()
         val isFavorite = currentMusic?.let { getMusicService()?.isFavorite(it.path) } ?: false
@@ -288,10 +185,8 @@ class NowPlayingFragment : Fragment() {
             MusicService.REPEAT_ONE -> R.drawable.ic_repeat_one
             else -> R.drawable.ic_repeat
         }
-
         val colorRes = if (repeatMode != MusicService.REPEAT_NONE) R.color.spotify_green else R.color.gray
         val color = ContextCompat.getColor(requireContext(), colorRes)
-
         binding.btnRepeat.setImageResource(icon)
         binding.btnRepeat.setColorFilter(color)
     }
@@ -303,9 +198,14 @@ class NowPlayingFragment : Fragment() {
         } else {
             ContextCompat.getColor(requireContext(), R.color.gray)
         }
-
         binding.btnFavorite.setImageResource(icon)
         binding.btnFavorite.setColorFilter(color)
+    }
+
+    private fun updateReverseButton(isReversed: Boolean) {
+        val colorRes = if (isReversed) R.color.spotify_green else R.color.gray
+        val color = ContextCompat.getColor(requireContext(), colorRes)
+        binding.btnReverse.setColorFilter(color)
     }
 
     private fun updateMusicInfo() {
@@ -379,23 +279,23 @@ class NowPlayingFragment : Fragment() {
     }
 
     private fun updateSeekbarProgress() {
-    if (isSeeking) return
+        if (isSeeking) return
 
-    val service = getMusicService()
-    val currentPosition = service?.getCurrentPosition() ?: 0
-    val duration = service?.getDuration() ?: 0
+        val service = getMusicService()
+        val currentPosition = service?.getCurrentPosition() ?: 0
+        val duration = service?.getDuration() ?: 0
 
-    if (duration > 0) {
-        binding.seekBar.max = duration
-        binding.seekBar.progress = currentPosition
-        binding.currentTime.text = formatTime(currentPosition)
-        binding.totalTime.text = formatTime(duration)
+        if (duration > 0) {
+            binding.seekBar.max = duration
+            binding.seekBar.progress = currentPosition
+            binding.currentTime.text = formatTime(currentPosition)
+            binding.totalTime.text = formatTime(duration)
+        }
+
+        if (service != null) {
+            updatePlayPauseButton()
+        }
     }
-
-    if (service != null) {
-        updatePlayPauseButton()
-    }
-}
 
     private fun formatTime(milliseconds: Int): String {
         val totalSeconds = milliseconds / 1000
