@@ -27,6 +27,7 @@ class NowPlayingFragment : Fragment() {
     private var currentAlbumArt: Bitmap? = null
     private var lastMusicPath: String? = null
     private var isSeeking = false
+    private var isMetaVisible = false
 
     override fun onCreateView(
         inflater: LayoutInflater,
@@ -74,25 +75,23 @@ class NowPlayingFragment : Fragment() {
     private fun setupUI() {
         binding.albumArt.setImageResource(R.drawable.album_placeholder)
         setupSeekbar()
+
+        binding.btnToggleMeta.setOnClickListener {
+            isMetaVisible = !isMetaVisible
+            binding.layoutMeta.visibility = if (isMetaVisible) View.VISIBLE else View.GONE
+            binding.btnToggleMeta.text = if (isMetaVisible) "▴ detalhes" else "▾ detalhes"
+        }
     }
 
     private fun setupSeekbar() {
         binding.seekBar.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
-                if (fromUser) {
-                    binding.currentTime.text = formatTime(progress)
-                }
+                if (fromUser) binding.currentTime.text = formatTime(progress)
             }
-
-            override fun onStartTrackingTouch(seekBar: SeekBar?) {
-                isSeeking = true
-            }
-
+            override fun onStartTrackingTouch(seekBar: SeekBar?) { isSeeking = true }
             override fun onStopTrackingTouch(seekBar: SeekBar?) {
                 isSeeking = false
-                seekBar?.progress?.let { progress ->
-                    getMusicService()?.seekTo(progress)
-                }
+                seekBar?.progress?.let { getMusicService()?.seekTo(it) }
             }
         })
     }
@@ -100,59 +99,35 @@ class NowPlayingFragment : Fragment() {
     private fun setupControls() {
         binding.btnPrevious.setOnClickListener {
             getMusicService()?.handlePreviousWithThreshold()
-            handler.postDelayed({
-                updateMusicInfo()
-                updateControlStates()
-            }, 100)
+            handler.postDelayed({ updateMusicInfo(); updateControlStates() }, 100)
         }
-
-        binding.btnPlayPause.setOnClickListener {
-            togglePlayPause()
-        }
-
+        binding.btnPlayPause.setOnClickListener { togglePlayPause() }
         binding.btnNext.setOnClickListener {
             getMusicService()?.playNext()
-            handler.postDelayed({
-                updateMusicInfo()
-                updateControlStates()
-            }, 100)
+            handler.postDelayed({ updateMusicInfo(); updateControlStates() }, 100)
         }
-
         binding.btnShuffle.setOnClickListener {
-            val isShuffling = getMusicService()?.toggleShuffle() ?: false
-            updateShuffleButton(isShuffling)
+            updateShuffleButton(getMusicService()?.toggleShuffle() ?: false)
         }
-
         binding.btnRepeat.setOnClickListener {
-            val repeatMode = getMusicService()?.toggleRepeat() ?: MusicService.REPEAT_NONE
-            updateRepeatButton(repeatMode)
+            updateRepeatButton(getMusicService()?.toggleRepeat() ?: MusicService.REPEAT_NONE)
         }
-
         binding.btnFavorite.setOnClickListener {
-            val currentMusic = getMusicService()?.getCurrentMusic()
-            currentMusic?.let { music ->
-                val isNowFavorite = getMusicService()?.toggleFavorite(music.path) ?: false
-                updateFavoriteButton(isNowFavorite)
+            getMusicService()?.getCurrentMusic()?.let { music ->
+                updateFavoriteButton(getMusicService()?.toggleFavorite(music.path) ?: false)
             }
         }
-
         binding.btnReverse.setOnClickListener {
-            val currentReverse = getMusicService()?.isReversed() ?: false
-            val newReverse = !currentReverse
+            val newReverse = !(getMusicService()?.isReversed() ?: false)
             getMusicService()?.setReverse(newReverse)
             updateReverseButton(newReverse)
         }
     }
 
     private fun togglePlayPause() {
-        if (getMusicService()?.isPlaying() == true) {
-            getMusicService()?.pauseMusic()
-        } else {
-            getMusicService()?.resumeMusic()
-        }
-        handler.postDelayed({
-            updatePlayPauseButton()
-        }, 50)
+        if (getMusicService()?.isPlaying() == true) getMusicService()?.pauseMusic()
+        else getMusicService()?.resumeMusic()
+        handler.postDelayed({ updatePlayPauseButton() }, 50)
     }
 
     private fun updateControlStates() {
@@ -160,52 +135,51 @@ class NowPlayingFragment : Fragment() {
         updateShuffleButton(getMusicService()?.isShuffling() ?: false)
         updateRepeatButton(getMusicService()?.getRepeatMode() ?: MusicService.REPEAT_NONE)
         updateReverseButton(getMusicService()?.isReversed() ?: false)
-
-        val currentMusic = getMusicService()?.getCurrentMusic()
-        val isFavorite = currentMusic?.let { getMusicService()?.isFavorite(it.path) } ?: false
+        val isFavorite = getMusicService()?.getCurrentMusic()
+            ?.let { getMusicService()?.isFavorite(it.path) } ?: false
         updateFavoriteButton(isFavorite)
     }
 
     private fun updatePlayPauseButton() {
-        val isPlaying = getMusicService()?.isPlaying() == true
         binding.btnPlayPause.setImageResource(
-            if (isPlaying) R.drawable.ic_pause else R.drawable.ic_play
+            if (getMusicService()?.isPlaying() == true) R.drawable.ic_pause else R.drawable.ic_play
         )
     }
 
     private fun updateShuffleButton(isShuffling: Boolean) {
-        val colorRes = if (isShuffling) R.color.spotify_green else R.color.gray
-        val color = ContextCompat.getColor(requireContext(), colorRes)
-        binding.btnShuffle.setColorFilter(color)
+        binding.btnShuffle.setColorFilter(
+            ContextCompat.getColor(requireContext(),
+                if (isShuffling) R.color.spotify_green else R.color.gray)
+        )
     }
 
     private fun updateRepeatButton(repeatMode: Int) {
-        val icon = when (repeatMode) {
+        binding.btnRepeat.setImageResource(when (repeatMode) {
             MusicService.REPEAT_ALL -> R.drawable.ic_repeat_all
             MusicService.REPEAT_ONE -> R.drawable.ic_repeat_one
             else -> R.drawable.ic_repeat
-        }
-        val colorRes = if (repeatMode != MusicService.REPEAT_NONE) R.color.spotify_green else R.color.gray
-        val color = ContextCompat.getColor(requireContext(), colorRes)
-        binding.btnRepeat.setImageResource(icon)
-        binding.btnRepeat.setColorFilter(color)
+        })
+        binding.btnRepeat.setColorFilter(
+            ContextCompat.getColor(requireContext(),
+                if (repeatMode != MusicService.REPEAT_NONE) R.color.spotify_green else R.color.gray)
+        )
     }
 
     private fun updateFavoriteButton(isFavorite: Boolean) {
-        val icon = if (isFavorite) R.drawable.ic_favorite_filled else R.drawable.ic_favorite
-        val color = if (isFavorite) {
-            ContextCompat.getColor(requireContext(), R.color.spotify_green)
-        } else {
-            ContextCompat.getColor(requireContext(), R.color.gray)
-        }
-        binding.btnFavorite.setImageResource(icon)
-        binding.btnFavorite.setColorFilter(color)
+        binding.btnFavorite.setImageResource(
+            if (isFavorite) R.drawable.ic_favorite_filled else R.drawable.ic_favorite
+        )
+        binding.btnFavorite.setColorFilter(
+            ContextCompat.getColor(requireContext(),
+                if (isFavorite) R.color.spotify_green else R.color.gray)
+        )
     }
 
     private fun updateReverseButton(isReversed: Boolean) {
-        val colorRes = if (isReversed) R.color.spotify_green else R.color.gray
-        val color = ContextCompat.getColor(requireContext(), colorRes)
-        binding.btnReverse.setColorFilter(color)
+        binding.btnReverse.setColorFilter(
+            ContextCompat.getColor(requireContext(),
+                if (isReversed) R.color.spotify_green else R.color.gray)
+        )
     }
 
     private fun updateMusicInfo() {
@@ -220,13 +194,13 @@ class NowPlayingFragment : Fragment() {
                 loadMetadataAndAlbumArt(currentMusic.path)
             }
 
-            val isFavorite = getMusicService()?.isFavorite(currentMusic.path) ?: false
-            updateFavoriteButton(isFavorite)
+            updateFavoriteButton(getMusicService()?.isFavorite(currentMusic.path) ?: false)
         } else {
             binding.songTitle.text = "Nenhuma música"
             binding.artistName.text = "Selecione uma música"
             binding.albumName.text = ""
             binding.albumArt.setImageResource(R.drawable.album_placeholder)
+            clearMetadata()
             updateFavoriteButton(false)
             lastMusicPath = null
         }
@@ -249,9 +223,19 @@ class NowPlayingFragment : Fragment() {
                             binding.albumArt.setImageResource(R.drawable.album_placeholder)
                             currentAlbumArt = null
                         }
+
+                        // Preencher metadados técnicos
+                        binding.txtMetaFormat.text = "Formato: ${metadata.mimeType ?: "—"}"
+                        binding.txtMetaBitrate.text = "Bitrate: ${metadata.bitrate ?: "—"}"
+                        binding.txtMetaSampleRate.text = "Sample rate: ${metadata.sampleRate ?: "—"}"
+                        binding.txtMetaChannels.text = "Canais: ${metadata.channels ?: "—"}"
+                        binding.txtMetaFileSize.text = "Tamanho: ${
+                            metadata.fileSize?.let { AlbumArtExtractor.formatFileSize(it) } ?: "—"
+                        }"
                     } else {
                         binding.albumArt.setImageResource(R.drawable.album_placeholder)
                         currentAlbumArt = null
+                        clearMetadata()
                     }
                 }
             } catch (e: Exception) {
@@ -259,9 +243,18 @@ class NowPlayingFragment : Fragment() {
                 activity?.runOnUiThread {
                     binding.albumArt.setImageResource(R.drawable.album_placeholder)
                     currentAlbumArt = null
+                    clearMetadata()
                 }
             }
         }.start()
+    }
+
+    private fun clearMetadata() {
+        binding.txtMetaFormat.text = ""
+        binding.txtMetaBitrate.text = ""
+        binding.txtMetaSampleRate.text = ""
+        binding.txtMetaChannels.text = ""
+        binding.txtMetaFileSize.text = ""
     }
 
     private fun startSeekbarUpdate() {
@@ -280,28 +273,21 @@ class NowPlayingFragment : Fragment() {
 
     private fun updateSeekbarProgress() {
         if (isSeeking) return
-
         val service = getMusicService()
         val currentPosition = service?.getCurrentPosition() ?: 0
         val duration = service?.getDuration() ?: 0
-
         if (duration > 0) {
             binding.seekBar.max = duration
             binding.seekBar.progress = currentPosition
             binding.currentTime.text = formatTime(currentPosition)
             binding.totalTime.text = formatTime(duration)
         }
-
-        if (service != null) {
-            updatePlayPauseButton()
-        }
+        if (service != null) updatePlayPauseButton()
     }
 
     private fun formatTime(milliseconds: Int): String {
         val totalSeconds = milliseconds / 1000
-        val minutes = totalSeconds / 60
-        val seconds = totalSeconds % 60
-        return String.format("%02d:%02d", minutes, seconds)
+        return String.format("%02d:%02d", totalSeconds / 60, totalSeconds % 60)
     }
 
     private fun getMusicService(): MusicService? {
