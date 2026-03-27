@@ -19,7 +19,7 @@
             android:layout_height="300dp"
             android:layout_gravity="center_horizontal"
             android:layout_marginTop="32dp"
-            android:layout_marginBottom="48dp"
+            android:layout_marginBottom="32dp"
             android:scaleType="centerCrop"
             android:src="@drawable/album_placeholder" />
 
@@ -28,7 +28,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical"
-            android:layout_marginBottom="32dp">
+            android:layout_marginBottom="8dp">
 
             <TextView
                 android:id="@+id/songTitle"
@@ -62,6 +62,71 @@
 
         </LinearLayout>
 
+        <!-- Metadados técnicos (colapsável) -->
+        <LinearLayout
+            android:id="@+id/layoutMeta"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:layout_marginTop="8dp"
+            android:layout_marginBottom="24dp"
+            android:background="#1AFFFFFF"
+            android:padding="12dp"
+            android:visibility="gone">
+
+            <TextView
+                android:id="@+id/txtMetaFormat"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:textColor="@color/gray_light"
+                android:textSize="12sp"
+                android:layout_marginBottom="2dp" />
+
+            <TextView
+                android:id="@+id/txtMetaBitrate"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:textColor="@color/gray_light"
+                android:textSize="12sp"
+                android:layout_marginBottom="2dp" />
+
+            <TextView
+                android:id="@+id/txtMetaSampleRate"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:textColor="@color/gray_light"
+                android:textSize="12sp"
+                android:layout_marginBottom="2dp" />
+
+            <TextView
+                android:id="@+id/txtMetaChannels"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:textColor="@color/gray_light"
+                android:textSize="12sp"
+                android:layout_marginBottom="2dp" />
+
+            <TextView
+                android:id="@+id/txtMetaFileSize"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:textColor="@color/gray_light"
+                android:textSize="12sp" />
+
+        </LinearLayout>
+
+        <!-- Botão toggle metadados -->
+        <TextView
+            android:id="@+id/btnToggleMeta"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center_horizontal"
+            android:layout_marginBottom="16dp"
+            android:text="▾ detalhes"
+            android:textColor="@color/gray"
+            android:textSize="12sp"
+            android:padding="8dp" />
+
         <!-- Progress Bar -->
         <LinearLayout
             android:layout_width="match_parent"
@@ -85,6 +150,9 @@
                 android:layout_weight="1"
                 android:layout_marginStart="16dp"
                 android:layout_marginEnd="16dp"
+                android:paddingTop="12dp"
+                android:paddingBottom="12dp"
+                android:minHeight="40dp"
                 android:progressTint="@color/spotify_green"
                 android:thumbTint="@color/spotify_green" />
 
