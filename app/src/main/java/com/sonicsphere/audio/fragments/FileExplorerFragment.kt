@@ -227,12 +227,9 @@ private fun loadThumbnailAndMeta(musicPath: String, holder: FileViewHolder) {
             val metadata = AlbumArtExtractor.getMetadata(musicPath)
 
             // Thumbnail
-            val thumb = metadata?.albumArt?.let { bmp ->
-                val scale = maxOf(bmp.width, bmp.height) / 96
-                if (scale > 1) Bitmap.createScaledBitmap(bmp, bmp.width / scale, bmp.height / scale, true)
-                else bmp
-            }
+            val thumb = metadata?.albumArt
             thumbnailCache[musicPath] = thumb
+            }
 
             // Meta string resumida
             val parts = listOfNotNull(
