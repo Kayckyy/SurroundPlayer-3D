@@ -4,7 +4,6 @@ import android.graphics.Bitmap
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
-import android.util.Log
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -112,16 +111,6 @@ class NowPlayingFragment : Fragment() {
         binding.btnRepeat.setOnClickListener {
             updateRepeatButton(getMusicService()?.toggleRepeat() ?: MusicService.REPEAT_NONE)
         }
-        binding.btnFavorite.setOnClickListener {
-            getMusicService()?.getCurrentMusic()?.let { music ->
-                updateFavoriteButton(getMusicService()?.toggleFavorite(music.path) ?: false)
-            }
-        }
-        binding.btnReverse.setOnClickListener {
-            val newReverse = !(getMusicService()?.isReversed() ?: false)
-            getMusicService()?.setReverse(newReverse)
-            updateReverseButton(newReverse)
-        }
     }
 
     private fun togglePlayPause() {
@@ -134,10 +123,6 @@ class NowPlayingFragment : Fragment() {
         updatePlayPauseButton()
         updateShuffleButton(getMusicService()?.isShuffling() ?: false)
         updateRepeatButton(getMusicService()?.getRepeatMode() ?: MusicService.REPEAT_NONE)
-        updateReverseButton(getMusicService()?.isReversed() ?: false)
-        val isFavorite = getMusicService()?.getCurrentMusic()
-            ?.let { getMusicService()?.isFavorite(it.path) } ?: false
-        updateFavoriteButton(isFavorite)
     }
 
     private fun updatePlayPauseButton() {
@@ -165,23 +150,6 @@ class NowPlayingFragment : Fragment() {
         )
     }
 
-    private fun updateFavoriteButton(isFavorite: Boolean) {
-        binding.btnFavorite.setImageResource(
-            if (isFavorite) R.drawable.ic_favorite_filled else R.drawable.ic_favorite
-        )
-        binding.btnFavorite.setColorFilter(
-            ContextCompat.getColor(requireContext(),
-                if (isFavorite) R.color.spotify_green else R.color.gray)
-        )
-    }
-
-    private fun updateReverseButton(isReversed: Boolean) {
-        binding.btnReverse.setColorFilter(
-            ContextCompat.getColor(requireContext(),
-                if (isReversed) R.color.spotify_green else R.color.gray)
-        )
-    }
-
     private fun updateMusicInfo() {
         val currentMusic = getMusicService()?.getCurrentMusic()
         if (currentMusic != null) {
@@ -193,15 +161,12 @@ class NowPlayingFragment : Fragment() {
                 lastMusicPath = currentMusic.path
                 loadMetadataAndAlbumArt(currentMusic.path)
             }
-
-            updateFavoriteButton(getMusicService()?.isFavorite(currentMusic.path) ?: false)
         } else {
             binding.songTitle.text = "Nenhuma música"
             binding.artistName.text = "Selecione uma música"
             binding.albumName.text = ""
             binding.albumArt.setImageResource(R.drawable.album_placeholder)
             clearMetadata()
-            updateFavoriteButton(false)
             lastMusicPath = null
         }
     }
@@ -224,7 +189,6 @@ class NowPlayingFragment : Fragment() {
                             currentAlbumArt = null
                         }
 
-                        // Preencher metadados técnicos
                         binding.txtMetaFormat.text = "Formato: ${metadata.mimeType ?: "—"}"
                         binding.txtMetaBitrate.text = "Bitrate: ${metadata.bitrate ?: "—"}"
                         binding.txtMetaSampleRate.text = "Sample rate: ${metadata.sampleRate ?: "—"}"
