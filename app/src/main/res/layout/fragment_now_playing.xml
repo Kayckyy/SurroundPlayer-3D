@@ -18,8 +18,8 @@
             android:layout_width="300dp"
             android:layout_height="300dp"
             android:layout_gravity="center_horizontal"
-            android:layout_marginTop="32dp"
-            android:layout_marginBottom="32dp"
+            android:layout_marginTop="16dp"
+            android:layout_marginBottom="24dp"
             android:scaleType="centerCrop"
             android:src="@drawable/album_placeholder" />
 
@@ -36,10 +36,13 @@
                 android:layout_height="wrap_content"
                 android:text="Song Title"
                 android:textColor="@color/white"
-                android:textSize="24sp"
+                android:textSize="22sp"
                 android:textStyle="bold"
+                android:fontFamily="@font/nunito"
                 android:gravity="center"
-                android:layout_marginBottom="8dp" />
+                android:layout_marginBottom="4dp"
+                android:ellipsize="marquee"
+                android:singleLine="true" />
 
             <TextView
                 android:id="@+id/artistName"
@@ -47,9 +50,10 @@
                 android:layout_height="wrap_content"
                 android:text="Artist Name"
                 android:textColor="@color/gray_light"
-                android:textSize="16sp"
+                android:textSize="15sp"
+                android:fontFamily="@font/nunito"
                 android:gravity="center"
-                android:layout_marginBottom="4dp" />
+                android:layout_marginBottom="2dp" />
 
             <TextView
                 android:id="@+id/albumName"
@@ -57,19 +61,33 @@
                 android:layout_height="wrap_content"
                 android:text="Album Name"
                 android:textColor="@color/gray"
-                android:textSize="14sp"
+                android:textSize="13sp"
+                android:fontFamily="@font/nunito"
                 android:gravity="center" />
 
         </LinearLayout>
 
-        <!-- Metadados técnicos (colapsável) -->
+        <!-- Toggle detalhes -->
+        <TextView
+            android:id="@+id/btnToggleMeta"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center_horizontal"
+            android:layout_marginTop="4dp"
+            android:layout_marginBottom="8dp"
+            android:text="▾ detalhes"
+            android:textColor="@color/gray"
+            android:textSize="12sp"
+            android:fontFamily="@font/nunito"
+            android:padding="8dp" />
+
+        <!-- Metadados técnicos -->
         <LinearLayout
             android:id="@+id/layoutMeta"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical"
-            android:layout_marginTop="8dp"
-            android:layout_marginBottom="24dp"
+            android:layout_marginBottom="16dp"
             android:background="#1AFFFFFF"
             android:padding="12dp"
             android:visibility="gone">
@@ -80,6 +98,7 @@
                 android:layout_height="wrap_content"
                 android:textColor="@color/gray_light"
                 android:textSize="12sp"
+                android:fontFamily="@font/nunito"
                 android:layout_marginBottom="2dp" />
 
             <TextView
@@ -88,6 +107,7 @@
                 android:layout_height="wrap_content"
                 android:textColor="@color/gray_light"
                 android:textSize="12sp"
+                android:fontFamily="@font/nunito"
                 android:layout_marginBottom="2dp" />
 
             <TextView
@@ -96,6 +116,7 @@
                 android:layout_height="wrap_content"
                 android:textColor="@color/gray_light"
                 android:textSize="12sp"
+                android:fontFamily="@font/nunito"
                 android:layout_marginBottom="2dp" />
 
             <TextView
@@ -104,6 +125,7 @@
                 android:layout_height="wrap_content"
                 android:textColor="@color/gray_light"
                 android:textSize="12sp"
+                android:fontFamily="@font/nunito"
                 android:layout_marginBottom="2dp" />
 
             <TextView
@@ -111,21 +133,10 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:textColor="@color/gray_light"
-                android:textSize="12sp" />
+                android:textSize="12sp"
+                android:fontFamily="@font/nunito" />
 
         </LinearLayout>
-
-        <!-- Botão toggle metadados -->
-        <TextView
-            android:id="@+id/btnToggleMeta"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_gravity="center_horizontal"
-            android:layout_marginBottom="16dp"
-            android:text="▾ detalhes"
-            android:textColor="@color/gray"
-            android:textSize="12sp"
-            android:padding="8dp" />
 
         <!-- Progress Bar -->
         <LinearLayout
@@ -141,15 +152,16 @@
                 android:layout_height="wrap_content"
                 android:text="0:00"
                 android:textColor="@color/gray"
-                android:textSize="12sp" />
+                android:textSize="12sp"
+                android:fontFamily="@font/nunito" />
 
             <SeekBar
                 android:id="@+id/seekBar"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
-                android:layout_marginStart="16dp"
-                android:layout_marginEnd="16dp"
+                android:layout_marginStart="12dp"
+                android:layout_marginEnd="12dp"
                 android:paddingTop="12dp"
                 android:paddingBottom="12dp"
                 android:minHeight="40dp"
@@ -162,18 +174,19 @@
                 android:layout_height="wrap_content"
                 android:text="0:00"
                 android:textColor="@color/gray"
-                android:textSize="12sp" />
+                android:textSize="12sp"
+                android:fontFamily="@font/nunito" />
 
         </LinearLayout>
 
-        <!-- Control Buttons -->
+        <!-- Controles principais -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="horizontal"
             android:gravity="center"
-            android:layout_marginTop="24dp"
-            android:layout_marginBottom="32dp">
+            android:layout_marginTop="16dp"
+            android:layout_marginBottom="16dp">
 
             <ImageButton
                 android:id="@+id/btnShuffle"
@@ -187,7 +200,7 @@
                 android:id="@+id/btnPrevious"
                 android:layout_width="64dp"
                 android:layout_height="64dp"
-                android:layout_marginStart="24dp"
+                android:layout_marginStart="16dp"
                 android:background="?attr/selectableItemBackgroundBorderless"
                 android:src="@drawable/ic_skip_previous"
                 app:tint="@color/white" />
@@ -214,36 +227,9 @@
                 android:id="@+id/btnRepeat"
                 android:layout_width="48dp"
                 android:layout_height="48dp"
-                android:layout_marginStart="24dp"
-                android:background="?attr/selectableItemBackgroundBorderless"
-                android:src="@drawable/ic_repeat"
-                app:tint="@color/gray" />
-
-        </LinearLayout>
-
-        <!-- Additional Controls -->
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:gravity="center"
-            android:layout_marginBottom="24dp">
-
-            <ImageButton
-                android:id="@+id/btnFavorite"
-                android:layout_width="48dp"
-                android:layout_height="48dp"
-                android:background="?attr/selectableItemBackgroundBorderless"
-                android:src="@drawable/ic_favorite_border"
-                app:tint="@color/gray" />
-
-            <ImageButton
-                android:id="@+id/btnReverse"
-                android:layout_width="48dp"
-                android:layout_height="48dp"
                 android:layout_marginStart="16dp"
                 android:background="?attr/selectableItemBackgroundBorderless"
-                android:src="@drawable/ic_swap_horiz"
+                android:src="@drawable/ic_repeat"
                 app:tint="@color/gray" />
 
         </LinearLayout>
