@@ -29,7 +29,6 @@ class FileExplorerFragment : Fragment() {
 
     // Cache de thumbnails para evitar recarregar
     private val thumbnailCache = mutableMapOf<String, Bitmap?>()
-    private val thumbnailCache = mutableMapOf<String, Bitmap?>()
     private val metaCache = mutableMapOf<String, String>()
 
     override fun onCreateView(
