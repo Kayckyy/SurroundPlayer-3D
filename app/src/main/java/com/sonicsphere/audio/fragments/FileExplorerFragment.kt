@@ -148,9 +148,10 @@ class FileExplorerFragment : Fragment() {
                 } else false
 
                 if (item.isMusicFile) {
+                    // Placeholder sem tint para não cobrir o bitmap depois
                     fileIcon.setImageResource(R.drawable.ic_music_note)
                     fileIcon.scaleType = android.widget.ImageView.ScaleType.FIT_CENTER
-                    fileIcon.clearColorFilter()
+                    fileIcon.colorFilter = null
 
                     if (thumbnailCache.containsKey(item.path)) {
                         val cached = thumbnailCache[item.path]
@@ -169,9 +170,11 @@ class FileExplorerFragment : Fragment() {
 
                 } else if (item.isDirectory) {
                     fileIcon.setImageResource(R.drawable.ic_folder)
+                    fileIcon.colorFilter = null
                     fileIcon.scaleType = android.widget.ImageView.ScaleType.FIT_CENTER
                 } else {
                     fileIcon.setImageResource(R.drawable.ic_file)
+                    fileIcon.colorFilter = null
                     fileIcon.scaleType = android.widget.ImageView.ScaleType.FIT_CENTER
                 }
 
@@ -209,8 +212,8 @@ class FileExplorerFragment : Fragment() {
                 try {
                     val metadata = AlbumArtExtractor.getMetadata(musicPath)
 
-                    // Thumbnail já vem escalado do getMetadata()
-                    val thumb = metadata?.albumArt
+                    // Usa albumArtThumb (96px) — já escalado no extractor
+                    val thumb = metadata?.albumArtThumb
                     thumbnailCache[musicPath] = thumb
 
                     val parts = listOfNotNull(
