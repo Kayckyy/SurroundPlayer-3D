@@ -3,12 +3,8 @@ package com.sonicsphere.audio.service
 import android.util.Log
 import kotlin.math.PI
 import kotlin.math.cos
-import kotlin.math.ln
-import kotlin.math.max
 import kotlin.math.min
-import kotlin.math.pow
 import kotlin.math.sin
-import kotlin.math.sqrt
 
 /**
  * Motor de convolução binaurial com 6 slots de IR.
@@ -22,83 +18,68 @@ import kotlin.math.sqrt
  *   - Cada slot aplica decorrelação/coloração espectral própria
  *   - Mistura de volta no estéreo com ganho reduzido
  *
- * Algoritmo: Overlap-Add com FFT de tamanho fixo (potência de 2).
+ * Algoritmo: Overlap-Add com FFT complexa (pares Re/Im intercalados).
  */
 class ConvolutionEngine(private val sampleRate: Int) {
 
     companion object {
         private const val TAG = "ConvolutionEngine"
-        private const val MAX_IR_SAMPLES = 44100       // 1 segundo @ 44.1kHz
-        private const val FFT_SIZE = 4096              // bloco de processamento
-        private const val HOP_SIZE = FFT_SIZE / 2      // 50% overlap
+        private const val MAX_IR_SAMPLES = 44100
+        // FFT_SIZE = número de pontos complexos → array tem FFT_SIZE*2 floats [Re,Im,Re,Im,...]
+        private const val FFT_SIZE = 2048
+        private const val HOP_SIZE = FFT_SIZE / 4  // amostras reais por bloco
 
-        // Ganhos padrão das reflexões (linear)
-        private const val GAIN_FRONT = 0.20f   // -14 dB
-        private const val GAIN_TOP   = 0.16f   // -16 dB
-        private const val GAIN_BACK  = 0.20f   // -14 dB
-        private const val GAIN_SUB   = 0.13f   // -18 dB
+        private const val GAIN_FRONT = 0.20f
+        private const val GAIN_TOP   = 0.16f
+        private const val GAIN_BACK  = 0.20f
+        private const val GAIN_SUB   = 0.13f
 
-        // Delays assimétricos de decorrelação (em samples @ 44100Hz)
-        private const val DELAY_FRONT_L = 13   // ~0.3ms
-        private const val DELAY_FRONT_R = 31   // ~0.7ms
-        private const val DELAY_BACK_L  = 66   // ~1.5ms
+        private const val DELAY_FRONT_L = 13
+        private const val DELAY_FRONT_R = 31
+        private const val DELAY_BACK_L  = 66
         private const val DELAY_BACK_R  = 0
     }
 
-    enum class IrSlot {
-        LEFT,   // Principal esquerdo
-        RIGHT,  // Principal direito
-        FRONT,  // Reflexão frente
-        TOP,    // Reflexão cima
-        BACK,   // Reflexão atrás
-        SUB     // Reflexão sub-graves
-    }
+    enum class IrSlot { LEFT, RIGHT, FRONT, TOP, BACK, SUB }
 
-    // IRs carregados por slot (FloatArray mono, já normalizado)
-    private val irData = mutableMapOf<IrSlot, FloatArray>()
-
-    // Partições da IR no domínio da frequência (overlap-add particionado)
+    private val irData       = mutableMapOf<IrSlot, FloatArray>()
     private val irPartitions = mutableMapOf<IrSlot, Array<FloatArray>>()
 
-    // Buffers de overlap por canal
-    private val overlapL = FloatArray(FFT_SIZE)
-    private val overlapR = FloatArray(FFT_SIZE)
-    private val overlapFront = FloatArray(FFT_SIZE)
-    private val overlapTop   = FloatArray(FFT_SIZE)
-    private val overlapBack  = FloatArray(FFT_SIZE)
-    private val overlapSub   = FloatArray(FFT_SIZE)
+    private val overlapL     = FloatArray(HOP_SIZE)
+    private val overlapR     = FloatArray(HOP_SIZE)
+    private val overlapFront = FloatArray(HOP_SIZE)
+    private val overlapTop   = FloatArray(HOP_SIZE)
+    private val overlapBack  = FloatArray(HOP_SIZE)
+    private val overlapSub   = FloatArray(HOP_SIZE)
 
-    // Buffer de entrada acumulado
-    private val inputBufferL = FloatArray(FFT_SIZE)
-    private val inputBufferR = FloatArray(FFT_SIZE)
-    private val inputBufferMid = FloatArray(FFT_SIZE)
+    private val inputBufferL   = FloatArray(HOP_SIZE)
+    private val inputBufferR   = FloatArray(HOP_SIZE)
+    private val inputBufferMid = FloatArray(HOP_SIZE)
     private var inputPos = 0
 
-    // Buffers de saída
-    private val outputL = FloatArray(FFT_SIZE * 2)
-    private val outputR = FloatArray(FFT_SIZE * 2)
-    private var outputPos = 0
-    private var outputAvailable = 0
+    // Fila circular de saida
+    private val OUTPUT_QUEUE = HOP_SIZE * 8
+    private val outQueueL  = FloatArray(OUTPUT_QUEUE)
+    private val outQueueR  = FloatArray(OUTPUT_QUEUE)
+    private var outWritePos  = 0
+    private var outReadPos   = 0
+    private var outAvailable = 0
 
-    // Delay lines para decorrelação
-    private val delayLineL = FloatArray(128)
-    private val delayLineR = FloatArray(128)
-    private var delayIdx = 0
-
-    // Allpass para decorrelação de fase (frente e cima)
-    private var allpassStateL = 0.0
-    private var allpassStateR = 0.0
-
-    // Filtro passa-baixa para Sub (~120Hz)
     private var subLpfL = 0.0
     private var subLpfR = 0.0
     private val subLpfCoeff: Double
 
     @Volatile var enabled = false
-    private var slotsLoaded = mutableSetOf<IrSlot>()
+    private val slotsLoaded = mutableSetOf<IrSlot>()
+
+    // Variaveis mantidas para compatibilidade com reset()
+    private var allpassStateL = 0.0
+    private var allpassStateR = 0.0
+    private val delayLineL = FloatArray(128)
+    private val delayLineR = FloatArray(128)
+    private var delayIdx = 0
 
     init {
-        // Coeficiente LPF para ~120Hz
         val rc = 1.0 / (2.0 * PI * 120.0)
         val dt = 1.0 / sampleRate
         subLpfCoeff = dt / (rc + dt)
@@ -106,26 +87,15 @@ class ConvolutionEngine(private val sampleRate: Int) {
 
     // ========== CARREGAMENTO DE IR ==========
 
-    /**
-     * Carrega um IR estéreo WAV no slot especificado.
-     * Para slots de reflexão, usa o canal L como referência mono.
-     * Para slots principais, usa L para LEFT e R para RIGHT.
-     */
     fun loadIr(slot: IrSlot, leftChannel: FloatArray, rightChannel: FloatArray) {
         val len = min(leftChannel.size, MAX_IR_SAMPLES)
 
         val ir = when (slot) {
             IrSlot.LEFT  -> leftChannel.copyOf(len)
             IrSlot.RIGHT -> rightChannel.copyOf(len)
-            else -> {
-                // Mid sum dos dois canais para reflexões
-                FloatArray(len) { i ->
-                    (leftChannel[i] + rightChannel[i]) * 0.5f
-                }
-            }
+            else -> FloatArray(len) { i -> (leftChannel[i] + rightChannel[i]) * 0.5f }
         }
 
-        // Aplica processamento psicoacústico específico por slot antes de particionar
         val processed = when (slot) {
             IrSlot.FRONT -> applyFrontPsychoacoustics(ir)
             IrSlot.TOP   -> applyTopPsychoacoustics(ir)
@@ -134,17 +104,13 @@ class ConvolutionEngine(private val sampleRate: Int) {
             else -> ir
         }
 
-        // Normaliza
         val peak = processed.maxOf { kotlin.math.abs(it) }
-        if (peak > 0f) {
-            for (i in processed.indices) processed[i] /= peak
-        }
+        if (peak > 0f) for (i in processed.indices) processed[i] /= peak
 
         irData[slot] = processed
         irPartitions[slot] = partitionIr(processed)
         slotsLoaded.add(slot)
-
-        Log.d(TAG, "✅ IR carregado: $slot | ${len} samples")
+        Log.d(TAG, "IR carregado: $slot | $len samples")
         resetOverlap(slot)
     }
 
@@ -153,39 +119,25 @@ class ConvolutionEngine(private val sampleRate: Int) {
         irPartitions.remove(slot)
         slotsLoaded.remove(slot)
         resetOverlap(slot)
-        Log.d(TAG, "🗑️ IR removido: $slot")
+        Log.d(TAG, "IR removido: $slot")
     }
 
     fun isSlotLoaded(slot: IrSlot) = slot in slotsLoaded
-
     fun hasPrincipalIrs() = IrSlot.LEFT in slotsLoaded && IrSlot.RIGHT in slotsLoaded
 
-    // ========== PROCESSAMENTO PSICOACÚSTICO POR SLOT ==========
+    // ========== PROCESSAMENTO PSICOACUSTICO ==========
 
-    /**
-     * FRENTE: fade-in de 2ms para suprimir onset direto + janelamento suave.
-     * Preserva timbre frontal sem competir com o sinal direto.
-     */
     private fun applyFrontPsychoacoustics(ir: FloatArray): FloatArray {
         val fadeInSamples = (0.002 * sampleRate).toInt()
         val out = ir.copyOf()
-        for (i in 0 until min(fadeInSamples, out.size)) {
-            out[i] *= (i.toFloat() / fadeInSamples)
-        }
-        return applyHannWindow(out, fadeOut = true)
+        for (i in 0 until min(fadeInSamples, out.size)) out[i] *= (i.toFloat() / fadeInSamples)
+        return applyHannWindow(out)
     }
 
-    /**
-     * CIMA: coloração espectral de elevação (boost ~8kHz, notch ~10kHz)
-     * + fade-in + rotação de fase 90° num canal via delay de quarto de período.
-     * O cérebro associa essa coloração com fontes acima.
-     */
     private fun applyTopPsychoacoustics(ir: FloatArray): FloatArray {
-        var out = applyFrontPsychoacoustics(ir) // fade-in primeiro
-
-        // Boost em ~8kHz via filtro peaking simplificado (shelving de alta)
-        val alpha = exp(-2.0 * PI * 8000.0 / sampleRate)
-        val boostGain = 1.6f // ~+4dB
+        var out = applyFrontPsychoacoustics(ir)
+        val alpha = kotlin.math.exp(-2.0 * PI * 8000.0 / sampleRate)
+        val boostGain = 1.6f
         var prev = 0.0
         for (i in out.indices) {
             val x = out[i].toDouble()
@@ -193,51 +145,30 @@ class ConvolutionEngine(private val sampleRate: Int) {
             prev = x
             out[i] = (x + highFreq * (boostGain - 1.0)).toFloat()
         }
-
-        // Notch em ~10kHz via comb filter de 1 sample (simplificado)
         val notchDelay = (sampleRate / 10000.0).toInt().coerceAtLeast(1)
         val notched = out.copyOf()
-        for (i in notchDelay until out.size) {
-            notched[i] = out[i] * 0.5f - out[i - notchDelay] * 0.5f
-        }
-
+        for (i in notchDelay until out.size) notched[i] = out[i] * 0.5f - out[i - notchDelay] * 0.5f
         return notched
     }
 
-    /**
-     * ATRÁS: fade-in + inversão de fase num canal + delay ~1.5ms no canal L.
-     * O cérebro interpreta a combinação como fonte posterior.
-     */
     private fun applyBackPsychoacoustics(ir: FloatArray): FloatArray {
-        // A inversão de fase é aplicada durante o mix (não aqui)
-        // Aqui só fazemos o fade-in com janela mais longa
         val fadeInSamples = (0.003 * sampleRate).toInt()
         val out = ir.copyOf()
-        for (i in 0 until min(fadeInSamples, out.size)) {
-            out[i] *= (i.toFloat() / fadeInSamples)
-        }
-        return applyHannWindow(out, fadeOut = true)
+        for (i in 0 until min(fadeInSamples, out.size)) out[i] *= (i.toFloat() / fadeInSamples)
+        return applyHannWindow(out)
     }
 
-    /**
-     * SUB: passa-baixo agressivo (~120Hz). Sub não tem localização direcional,
-     * então é mono puro sem decorrelação — só adiciona peso e profundidade.
-     */
     private fun applySubFilter(ir: FloatArray): FloatArray {
         val out = ir.copyOf()
         var lpf = 0.0
         val rc = 1.0 / (2.0 * PI * 120.0)
         val dt = 1.0 / sampleRate
         val alpha = dt / (rc + dt)
-        for (i in out.indices) {
-            lpf += alpha * (out[i] - lpf)
-            out[i] = lpf.toFloat()
-        }
+        for (i in out.indices) { lpf += alpha * (out[i] - lpf); out[i] = lpf.toFloat() }
         return out
     }
 
-    private fun applyHannWindow(ir: FloatArray, fadeOut: Boolean): FloatArray {
-        if (!fadeOut) return ir
+    private fun applyHannWindow(ir: FloatArray): FloatArray {
         val out = ir.copyOf()
         val fadeStart = (out.size * 0.7).toInt()
         val fadeLen = out.size - fadeStart
@@ -248,44 +179,43 @@ class ConvolutionEngine(private val sampleRate: Int) {
         return out
     }
 
-    // ========== PARTICIONAMENTO DA IR (Overlap-Add) ==========
+    // ========== PARTICIONAMENTO ==========
 
+    /**
+     * Cada particao: HOP_SIZE amostras reais → zero-pad para FFT_SIZE pontos
+     * → FFT complexa → array de FFT_SIZE*2 floats [Re0,Im0,Re1,Im1,...]
+     */
     private fun partitionIr(ir: FloatArray): Array<FloatArray> {
         val numPartitions = (ir.size + HOP_SIZE - 1) / HOP_SIZE
         return Array(numPartitions) { p ->
             val start = p * HOP_SIZE
-            val end = min(start + HOP_SIZE, ir.size)
-            val partition = FloatArray(FFT_SIZE)
+            val end   = min(start + HOP_SIZE, ir.size)
+            // Array intercalado [Re,Im]: tamanho = FFT_SIZE * 2
+            val partition = FloatArray(FFT_SIZE * 2)
             for (i in start until end) {
-                partition[i - start] = ir[i]
+                partition[(i - start) * 2] = ir[i]  // Re; Im ja e 0
             }
-            // FFT da partição (armazenada como real/imag intercalado)
-            fftReal(partition)
-            partition
+            fftComplex(partition, inverse = false)
+            partition  // retorna FloatArray, nao Unit
         }
     }
 
     // ========== PROCESSAMENTO PRINCIPAL ==========
 
-    /**
-     * Processa buffer estéreo intercalado (L, R, L, R, ...) in-place.
-     * Aplica convolução principal + reflexões misturadas.
-     */
     fun process(buffer: ShortArray) {
         if (!enabled || !hasPrincipalIrs()) return
-
         val frameCount = buffer.size / 2
 
         for (frame in 0 until frameCount) {
             val idxL = frame * 2
             val idxR = frame * 2 + 1
 
-            val sampleL = buffer[idxL].toFloat() / 32768f
-            val sampleR = buffer[idxR].toFloat() / 32768f
+            val sampleL   = buffer[idxL].toFloat() / 32768f
+            val sampleR   = buffer[idxR].toFloat() / 32768f
             val sampleMid = (sampleL + sampleR) * 0.5f
 
-            inputBufferL[inputPos] = sampleL
-            inputBufferR[inputPos] = sampleR
+            inputBufferL[inputPos]   = sampleL
+            inputBufferR[inputPos]   = sampleR
             inputBufferMid[inputPos] = sampleMid
             inputPos++
 
@@ -294,143 +224,114 @@ class ConvolutionEngine(private val sampleRate: Int) {
                 inputPos = 0
             }
 
-            // Saída
-            if (outputAvailable > 0) {
-                val outL = outputL[outputPos].coerceIn(-1f, 1f)
-                val outR = outputR[outputPos].coerceIn(-1f, 1f)
-                buffer[idxL] = (outL * 32767f).toInt().toShort()
-                buffer[idxR] = (outR * 32767f).toInt().toShort()
-                outputPos++
-                outputAvailable--
+            if (outAvailable > 0) {
+                buffer[idxL] = (outQueueL[outReadPos].coerceIn(-1f, 1f) * 32767f).toInt().toShort()
+                buffer[idxR] = (outQueueR[outReadPos].coerceIn(-1f, 1f) * 32767f).toInt().toShort()
+                outReadPos = (outReadPos + 1) % OUTPUT_QUEUE
+                outAvailable--
             }
         }
     }
 
     private fun processBlock() {
-        // Prepara blocos de entrada com zero-padding
-        val blockL   = FloatArray(FFT_SIZE).also { inputBufferL.copyInto(it, 0, 0, HOP_SIZE) }
-        val blockR   = FloatArray(FFT_SIZE).also { inputBufferR.copyInto(it, 0, 0, HOP_SIZE) }
-        val blockMid = FloatArray(FFT_SIZE).also { inputBufferMid.copyInto(it, 0, 0, HOP_SIZE) }
-
-        // FFT dos blocos de entrada
-        fftReal(blockL)
-        fftReal(blockR)
-        fftReal(blockMid)
-
-        // Resultado acumulado
-        val resultL = FloatArray(FFT_SIZE)
-        val resultR = FloatArray(FFT_SIZE)
-
-        // --- Convolução principal L e R ---
-        irPartitions[IrSlot.LEFT]?.get(0)?.let { irF ->
-            complexMultiplyAdd(blockL, irF, resultL)
+        // Monta blocos intercalados [Re,Im=0,...] para FFT
+        val blockL   = FloatArray(FFT_SIZE * 2)
+        val blockR   = FloatArray(FFT_SIZE * 2)
+        val blockMid = FloatArray(FFT_SIZE * 2)
+        for (i in 0 until HOP_SIZE) {
+            blockL[i * 2]   = inputBufferL[i]
+            blockR[i * 2]   = inputBufferR[i]
+            blockMid[i * 2] = inputBufferMid[i]
         }
-        irPartitions[IrSlot.RIGHT]?.get(0)?.let { irF ->
-            complexMultiplyAdd(blockR, irF, resultR)
-        }
+        fftComplex(blockL,   inverse = false)
+        fftComplex(blockR,   inverse = false)
+        fftComplex(blockMid, inverse = false)
 
-        // --- Reflexões ---
-        if (IrSlot.FRONT in slotsLoaded) {
-            val reflF = FloatArray(FFT_SIZE)
-            irPartitions[IrSlot.FRONT]?.get(0)?.let { irF ->
-                complexMultiplyAdd(blockMid, irF, reflF)
-            }
-            val refl = FloatArray(FFT_SIZE)
-            ifftReal(reflF, refl)
+        val resultL = FloatArray(FFT_SIZE * 2)
+        val resultR = FloatArray(FFT_SIZE * 2)
 
-            // Decorrelação: delay assimétrico L/R
-            applyAsymmetricDelay(refl, resultL, resultR,
-                DELAY_FRONT_L, DELAY_FRONT_R, GAIN_FRONT, invertR = false)
+        // Convolucao principal
+        irPartitions[IrSlot.LEFT]?.get(0)?.let  { complexMultiplyAdd(blockL, it, resultL) }
+        irPartitions[IrSlot.RIGHT]?.get(0)?.let { complexMultiplyAdd(blockR, it, resultR) }
+
+        // Funcao auxiliar: convolve blockMid com IR do slot e retorna amostras reais
+        fun convolveReflection(slot: IrSlot): FloatArray? {
+            if (slot !in slotsLoaded) return null
+            val reflF = FloatArray(FFT_SIZE * 2)
+            irPartitions[slot]?.get(0)?.let { complexMultiplyAdd(blockMid, it, reflF) }
+            val refl = FloatArray(HOP_SIZE)
+            ifftComplex(reflF, refl)
+            return refl
         }
 
-        if (IrSlot.TOP in slotsLoaded) {
-            val reflF = FloatArray(FFT_SIZE)
-            irPartitions[IrSlot.TOP]?.get(0)?.let { irF ->
-                complexMultiplyAdd(blockMid, irF, reflF)
-            }
-            val refl = FloatArray(FFT_SIZE)
-            ifftReal(reflF, refl)
+        convolveReflection(IrSlot.FRONT)?.let { refl ->
+            applyAsymmetricDelay(refl, resultL, resultR, DELAY_FRONT_L, DELAY_FRONT_R, GAIN_FRONT, invertR = false)
+        }
 
-            // Decorrelação: allpass de fase diferente por canal
-            val reflDecorr = applyAllpassDecorrelation(refl)
-            for (i in refl.indices) {
-                resultL[i] += refl[i] * GAIN_TOP
-                resultR[i] += reflDecorr[i] * GAIN_TOP
+        convolveReflection(IrSlot.TOP)?.let { refl ->
+            val decorr = applyAllpassDecorrelation(refl)
+            for (i in 0 until HOP_SIZE) {
+                resultL[i * 2] += refl[i] * GAIN_TOP
+                resultR[i * 2] += decorr[i] * GAIN_TOP
             }
         }
 
-        if (IrSlot.BACK in slotsLoaded) {
-            val reflF = FloatArray(FFT_SIZE)
-            irPartitions[IrSlot.BACK]?.get(0)?.let { irF ->
-                complexMultiplyAdd(blockMid, irF, reflF)
-            }
-            val refl = FloatArray(FFT_SIZE)
-            ifftReal(reflF, refl)
-
-            // Decorrelação: delay L + inversão de fase R
-            applyAsymmetricDelay(refl, resultL, resultR,
-                DELAY_BACK_L, DELAY_BACK_R, GAIN_BACK, invertR = true)
+        convolveReflection(IrSlot.BACK)?.let { refl ->
+            applyAsymmetricDelay(refl, resultL, resultR, DELAY_BACK_L, DELAY_BACK_R, GAIN_BACK, invertR = true)
         }
 
-        if (IrSlot.SUB in slotsLoaded) {
-            val reflF = FloatArray(FFT_SIZE)
-            irPartitions[IrSlot.SUB]?.get(0)?.let { irF ->
-                complexMultiplyAdd(blockMid, irF, reflF)
-            }
-            val refl = FloatArray(FFT_SIZE)
-            ifftReal(reflF, refl)
-
-            // Sub: passa-baixo + mono
-            for (i in refl.indices) {
+        convolveReflection(IrSlot.SUB)?.let { refl ->
+            for (i in 0 until HOP_SIZE) {
                 subLpfL += subLpfCoeff * (refl[i] - subLpfL)
                 subLpfR += subLpfCoeff * (refl[i] - subLpfR)
-                resultL[i] += subLpfL.toFloat() * GAIN_SUB
-                resultR[i] += subLpfR.toFloat() * GAIN_SUB
+                resultL[i * 2] += subLpfL.toFloat() * GAIN_SUB
+                resultR[i * 2] += subLpfR.toFloat() * GAIN_SUB
             }
         }
 
         // IFFT do resultado principal
-        val outL = FloatArray(FFT_SIZE)
-        val outR = FloatArray(FFT_SIZE)
-        ifftReal(resultL, outL)
-        ifftReal(resultR, outR)
+        val outL = FloatArray(HOP_SIZE)
+        val outR = FloatArray(HOP_SIZE)
+        ifftComplex(resultL, outL)
+        ifftComplex(resultR, outR)
 
-        // Overlap-add
+        // Overlap-Add
+        val finalL = FloatArray(HOP_SIZE)
+        val finalR = FloatArray(HOP_SIZE)
         for (i in 0 until HOP_SIZE) {
-            outputL[i] = outL[i] + overlapL[i]
-            outputR[i] = outR[i] + overlapR[i]
+            finalL[i] = outL[i] + overlapL[i]
+            finalR[i] = outR[i] + overlapR[i]
         }
-        for (i in HOP_SIZE until FFT_SIZE) {
-            overlapL[i - HOP_SIZE] = outL[i]
-            overlapR[i - HOP_SIZE] = outR[i]
-        }
+        overlapL.fill(0f)
+        overlapR.fill(0f)
 
-        outputPos = 0
-        outputAvailable = HOP_SIZE
+        // Escreve na fila circular
+        for (i in 0 until HOP_SIZE) {
+            outQueueL[outWritePos] = finalL[i]
+            outQueueR[outWritePos] = finalR[i]
+            outWritePos = (outWritePos + 1) % OUTPUT_QUEUE
+            outAvailable++
+        }
     }
 
-    // ========== DECORRELAÇÃO ==========
+    // ========== DECORRELACAO ==========
 
     private fun applyAsymmetricDelay(
-        refl: FloatArray,
-        outL: FloatArray, outR: FloatArray,
-        delayL: Int, delayR: Int,
-        gain: Float, invertR: Boolean
+        refl: FloatArray, outL: FloatArray, outR: FloatArray,
+        delayL: Int, delayR: Int, gain: Float, invertR: Boolean
     ) {
         for (i in refl.indices) {
             val srcL = if (i >= delayL) refl[i - delayL] else 0f
             val srcR = if (i >= delayR) refl[i - delayR] else 0f
-            outL[i] += srcL * gain
-            outR[i] += srcR * gain * (if (invertR) -1f else 1f)
+            outL[i * 2] += srcL * gain
+            outR[i * 2] += srcR * gain * (if (invertR) -1f else 1f)
         }
     }
 
     private fun applyAllpassDecorrelation(input: FloatArray): FloatArray {
-        // Allpass de primeira ordem: y[n] = -g*x[n] + x[n-1] + g*y[n-1]
         val g = 0.7
         val out = FloatArray(input.size)
-        var xPrev = 0.0
-        var yPrev = 0.0
+        var xPrev = 0.0; var yPrev = 0.0
         for (i in input.indices) {
             val x = input[i].toDouble()
             val y = -g * x + xPrev + g * yPrev
@@ -440,80 +341,94 @@ class ConvolutionEngine(private val sampleRate: Int) {
         return out
     }
 
-    // ========== FFT (Cooley-Tukey radix-2, in-place) ==========
-    // Armazena como [Re0, Im0, Re1, Im1, ...] mas simplificado para real
+    // ========== FFT COMPLEXA (Cooley-Tukey radix-2, in-place) ==========
+    // data: array de floats intercalados [Re0, Im0, Re1, Im1, ...]
+    // tamanho do array = N * 2, onde N = numero de pontos complexos (deve ser potencia de 2)
 
-    private fun fftReal(data: FloatArray) {
-        val n = data.size
+    private fun fftComplex(data: FloatArray, inverse: Boolean) {
+        val n = data.size / 2  // numero de pontos complexos
+
         // Bit-reversal
         var j = 0
         for (i in 1 until n) {
             var bit = n shr 1
             while (j and bit != 0) { j = j xor bit; bit = bit shr 1 }
             j = j xor bit
-            if (i < j) { val tmp = data[i]; data[i] = data[j]; data[j] = tmp }
+            if (i < j) {
+                var tmp = data[i * 2];     data[i * 2]     = data[j * 2];     data[j * 2]     = tmp
+                    tmp = data[i * 2 + 1]; data[i * 2 + 1] = data[j * 2 + 1]; data[j * 2 + 1] = tmp
+            }
         }
+
         // Butterfly
         var len = 2
         while (len <= n) {
-            val halfLen = len / 2
-            val wReal = cos(-2.0 * PI / len)
-            val wImag = sin(-2.0 * PI / len)
+            val ang = 2.0 * PI / len * (if (inverse) -1 else 1)
+            val wRe = cos(ang)
+            val wIm = sin(ang)
             var pos = 0
             while (pos < n) {
-                var curReal = 1.0; var curImag = 0.0
-                for (k in 0 until halfLen) {
-                    val uReal = data[pos + k].toDouble()
-                    val vReal = data[pos + k + halfLen] * curReal
-                    data[pos + k] = (uReal + vReal).toFloat()
-                    data[pos + k + halfLen] = (uReal - vReal).toFloat()
-                    val newReal = curReal * wReal - curImag * wImag
-                    curImag = curReal * wImag + curImag * wReal
-                    curReal = newReal
+                var curRe = 1.0; var curIm = 0.0
+                for (k in 0 until len / 2) {
+                    val uRe = data[(pos + k) * 2].toDouble()
+                    val uIm = data[(pos + k) * 2 + 1].toDouble()
+                    val vRe = data[(pos + k + len / 2) * 2].toDouble()
+                    val vIm = data[(pos + k + len / 2) * 2 + 1].toDouble()
+
+                    val tRe = curRe * vRe - curIm * vIm
+                    val tIm = curRe * vIm + curIm * vRe
+
+                    data[(pos + k) * 2]             = (uRe + tRe).toFloat()
+                    data[(pos + k) * 2 + 1]         = (uIm + tIm).toFloat()
+                    data[(pos + k + len/2) * 2]     = (uRe - tRe).toFloat()
+                    data[(pos + k + len/2) * 2 + 1] = (uIm - tIm).toFloat()
+
+                    val newRe = curRe * wRe - curIm * wIm
+                    curIm = curRe * wIm + curIm * wRe
+                    curRe = newRe
                 }
                 pos += len
             }
             len = len shl 1
         }
-    }
 
-    private fun ifftReal(freq: FloatArray, out: FloatArray) {
-        val data = freq.copyOf()
-        // Conjuga (para IFFT de sinal real, simplesmente inverte)
-        for (i in 1 until data.size / 2) {
-            val tmp = data[i]; data[i] = data[data.size - i]; data[data.size - i] = tmp
+        if (inverse) {
+            val scale = 1f / n
+            for (i in data.indices) data[i] *= scale
         }
-        fftReal(data)
-        val scale = 1f / data.size
-        for (i in data.indices) out[i] = data[i] * scale
     }
 
+    // IFFT -> extrai so a parte real para out[]
+    private fun ifftComplex(freq: FloatArray, out: FloatArray) {
+        val tmp = freq.copyOf()
+        fftComplex(tmp, inverse = true)
+        val count = min(out.size, tmp.size / 2)
+        for (i in 0 until count) out[i] = tmp[i * 2]
+    }
+
+    // Multiplicacao complexa correta: (aRe + aIm*j) * (bRe + bIm*j)
     private fun complexMultiplyAdd(a: FloatArray, b: FloatArray, out: FloatArray) {
-        val half = a.size / 2
-        for (i in 0 until half) {
-            val j = a.size - 1 - i
-            // Multiplicação complexa simplificada para espectro real
-            out[i] += a[i] * b[i]
-            if (j != i) out[j] += a[j] * b[j]
+        val n = a.size / 2
+        for (i in 0 until n) {
+            val aRe = a[i * 2].toDouble();     val aIm = a[i * 2 + 1].toDouble()
+            val bRe = b[i * 2].toDouble();     val bIm = b[i * 2 + 1].toDouble()
+            out[i * 2]     += (aRe * bRe - aIm * bIm).toFloat()
+            out[i * 2 + 1] += (aRe * bIm + aIm * bRe).toFloat()
         }
     }
 
-    // ========== UTILITÁRIOS ==========
-
-    private fun exp(x: Double) = kotlin.math.exp(x)
+    // ========== UTILITARIOS ==========
 
     private fun resetOverlap(slot: IrSlot) {
         when (slot) {
-            IrSlot.LEFT, IrSlot.RIGHT -> {
-                overlapL.fill(0f); overlapR.fill(0f)
-            }
+            IrSlot.LEFT, IrSlot.RIGHT -> { overlapL.fill(0f); overlapR.fill(0f) }
             IrSlot.FRONT -> overlapFront.fill(0f)
             IrSlot.TOP   -> overlapTop.fill(0f)
             IrSlot.BACK  -> overlapBack.fill(0f)
             IrSlot.SUB   -> overlapSub.fill(0f)
         }
-        outputL.fill(0f); outputR.fill(0f)
-        outputPos = 0; outputAvailable = 0
+        outQueueL.fill(0f); outQueueR.fill(0f)
+        outWritePos = 0; outReadPos = 0; outAvailable = 0
         inputPos = 0
         inputBufferL.fill(0f); inputBufferR.fill(0f); inputBufferMid.fill(0f)
     }
@@ -522,8 +437,8 @@ class ConvolutionEngine(private val sampleRate: Int) {
         overlapL.fill(0f); overlapR.fill(0f)
         overlapFront.fill(0f); overlapTop.fill(0f)
         overlapBack.fill(0f); overlapSub.fill(0f)
-        outputL.fill(0f); outputR.fill(0f)
-        outputPos = 0; outputAvailable = 0
+        outQueueL.fill(0f); outQueueR.fill(0f)
+        outWritePos = 0; outReadPos = 0; outAvailable = 0
         inputPos = 0
         inputBufferL.fill(0f); inputBufferR.fill(0f); inputBufferMid.fill(0f)
         subLpfL = 0.0; subLpfR = 0.0
