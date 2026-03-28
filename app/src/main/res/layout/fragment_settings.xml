@@ -157,6 +157,395 @@
 
         </LinearLayout>
 
+        <!-- SEÇÃO ÁUDIO 3D BINAURAL (HRTF / ConvolutionEngine) -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:background="#1A1A1A"
+            android:padding="16dp"
+            android:layout_marginBottom="16dp">
+
+            <!-- Cabeçalho + switch -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical">
+
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="Áudio Binaural 3D"
+                        android:textColor="@color/white"
+                        android:textSize="18sp"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="HRTF · Convolução"
+                        android:textColor="@color/spotify_green"
+                        android:textSize="11sp"
+                        android:layout_marginTop="2dp"
+                        android:alpha="0.8" />
+
+                </LinearLayout>
+
+                <androidx.appcompat.widget.SwitchCompat
+                    android:id="@+id/switchBinaural"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:theme="@style/SwitchTheme" />
+
+            </LinearLayout>
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Carregue IRs WAV em Android/data/com.sonicsphere.audio/files/ir/"
+                android:textColor="@color/gray"
+                android:textSize="13sp"
+                android:layout_marginTop="4dp"
+                android:layout_marginBottom="16dp" />
+
+            <!-- Painel de slots (visível quando switch ON) -->
+            <LinearLayout
+                android:id="@+id/binauralSlotsContainer"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:visibility="gone">
+
+                <!-- Slot LEFT -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:layout_marginBottom="10dp">
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:orientation="vertical">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="LEFT (principal)"
+                            android:textColor="@color/white"
+                            android:textSize="14sp"
+                            android:textStyle="bold" />
+
+                        <TextView
+                            android:id="@+id/textIrLeft"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Não carregado"
+                            android:textColor="@color/gray"
+                            android:textSize="12sp" />
+
+                    </LinearLayout>
+
+                    <Button
+                        android:id="@+id/btnIrLeft"
+                        android:layout_width="wrap_content"
+                        android:layout_height="36dp"
+                        android:text="Carregar"
+                        android:textSize="12sp"
+                        android:backgroundTint="@color/spotify_green"
+                        android:textColor="@color/black" />
+
+                    <Button
+                        android:id="@+id/btnIrLeftClear"
+                        android:layout_width="wrap_content"
+                        android:layout_height="36dp"
+                        android:text="✕"
+                        android:textSize="12sp"
+                        android:layout_marginStart="6dp"
+                        android:backgroundTint="#333333"
+                        android:textColor="@color/gray" />
+
+                </LinearLayout>
+
+                <!-- Slot RIGHT -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:layout_marginBottom="10dp">
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:orientation="vertical">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="RIGHT (principal)"
+                            android:textColor="@color/white"
+                            android:textSize="14sp"
+                            android:textStyle="bold" />
+
+                        <TextView
+                            android:id="@+id/textIrRight"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Não carregado"
+                            android:textColor="@color/gray"
+                            android:textSize="12sp" />
+
+                    </LinearLayout>
+
+                    <Button
+                        android:id="@+id/btnIrRight"
+                        android:layout_width="wrap_content"
+                        android:layout_height="36dp"
+                        android:text="Carregar"
+                        android:textSize="12sp"
+                        android:backgroundTint="@color/spotify_green"
+                        android:textColor="@color/black" />
+
+                    <Button
+                        android:id="@+id/btnIrRightClear"
+                        android:layout_width="wrap_content"
+                        android:layout_height="36dp"
+                        android:text="✕"
+                        android:textSize="12sp"
+                        android:layout_marginStart="6dp"
+                        android:backgroundTint="#333333"
+                        android:textColor="@color/gray" />
+
+                </LinearLayout>
+
+                <!-- Divisor Reflexões -->
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="Reflexões (opcional)"
+                    android:textColor="@color/spotify_green"
+                    android:textSize="13sp"
+                    android:textStyle="bold"
+                    android:layout_marginBottom="10dp"
+                    android:layout_marginTop="4dp" />
+
+                <!-- Slot FRONT -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:layout_marginBottom="10dp">
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:orientation="vertical">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="FRONT"
+                            android:textColor="@color/white"
+                            android:textSize="14sp"
+                            android:textStyle="bold" />
+
+                        <TextView
+                            android:id="@+id/textIrFront"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Não carregado"
+                            android:textColor="@color/gray"
+                            android:textSize="12sp" />
+
+                    </LinearLayout>
+
+                    <Button
+                        android:id="@+id/btnIrFront"
+                        android:layout_width="wrap_content"
+                        android:layout_height="36dp"
+                        android:text="Carregar"
+                        android:textSize="12sp"
+                        android:backgroundTint="@color/spotify_green"
+                        android:textColor="@color/black" />
+
+                    <Button
+                        android:id="@+id/btnIrFrontClear"
+                        android:layout_width="wrap_content"
+                        android:layout_height="36dp"
+                        android:text="✕"
+                        android:textSize="12sp"
+                        android:layout_marginStart="6dp"
+                        android:backgroundTint="#333333"
+                        android:textColor="@color/gray" />
+
+                </LinearLayout>
+
+                <!-- Slot TOP -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:layout_marginBottom="10dp">
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:orientation="vertical">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="TOP"
+                            android:textColor="@color/white"
+                            android:textSize="14sp"
+                            android:textStyle="bold" />
+
+                        <TextView
+                            android:id="@+id/textIrTop"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Não carregado"
+                            android:textColor="@color/gray"
+                            android:textSize="12sp" />
+
+                    </LinearLayout>
+
+                    <Button
+                        android:id="@+id/btnIrTop"
+                        android:layout_width="wrap_content"
+                        android:layout_height="36dp"
+                        android:text="Carregar"
+                        android:textSize="12sp"
+                        android:backgroundTint="@color/spotify_green"
+                        android:textColor="@color/black" />
+
+                    <Button
+                        android:id="@+id/btnIrTopClear"
+                        android:layout_width="wrap_content"
+                        android:layout_height="36dp"
+                        android:text="✕"
+                        android:textSize="12sp"
+                        android:layout_marginStart="6dp"
+                        android:backgroundTint="#333333"
+                        android:textColor="@color/gray" />
+
+                </LinearLayout>
+
+                <!-- Slot BACK -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:layout_marginBottom="10dp">
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:orientation="vertical">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="BACK"
+                            android:textColor="@color/white"
+                            android:textSize="14sp"
+                            android:textStyle="bold" />
+
+                        <TextView
+                            android:id="@+id/textIrBack"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Não carregado"
+                            android:tex                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical">
+
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="Bass Boost"
+                    android:textColor="@color/white"
+                    android:textSize="18sp"
+                    android:textStyle="bold" />
+
+                <androidx.appcompat.widget.SwitchCompat
+                    android:id="@+id/switchBassBoost"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:theme="@style/SwitchTheme" />
+
+            </LinearLayout>
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Aumenta as frequências graves"
+                android:textColor="@color/gray"
+                android:textSize="14sp"
+                android:layout_marginTop="4dp"
+                android:layout_marginBottom="16dp" />
+
+            <LinearLayout
+                android:id="@+id/bassBoostControlsContainer"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:visibility="gone">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:layout_marginBottom="8dp">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Intensidade: "
+                        android:textColor="@color/white"
+                        android:textSize="14sp" />
+
+                    <TextView
+                        android:id="@+id/textBassBoostValue"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="0%"
+                        android:textColor="@color/spotify_green"
+                        android:textSize="14sp"
+                        android:textStyle="bold" />
+
+                </LinearLayout>
+
+                <SeekBar
+                    android:id="@+id/seekBarBassBoost"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:progressTint="@color/spotify_green"
+                    android:thumbTint="@color/spotify_green" />
+
+            </LinearLayout>
+
+        </LinearLayout>
+
         <!-- SEÇÃO ÁUDIO 3D (HAAS EFFECT) - POWERED BY OBOE -->
         <LinearLayout
             android:layout_width="match_parent"
@@ -180,7 +569,7 @@
                     <TextView
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:text="Áudio 3D"
+                        android:text="Espacialização Simples"
                         android:textColor="@color/white"
                         android:textSize="18sp"
                         android:textStyle="bold" />
