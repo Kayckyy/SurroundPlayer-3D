@@ -372,10 +372,6 @@ class StreamingAudioPlayer {
         } catch (e: Exception) { Log.e(TAG, "❌ Speed: ${e.message}") }
     }
 
-    fun setReverse(enabled: Boolean) {
-        Log.w(TAG, "Reverse requer decodificação invertida — não implementado")
-    }
-
     private fun findAudioTrack(extractor: MediaExtractor): Int {
         for (i in 0 until extractor.trackCount) {
             val mime = extractor.getTrackFormat(i).getString(MediaFormat.KEY_MIME) ?: continue
