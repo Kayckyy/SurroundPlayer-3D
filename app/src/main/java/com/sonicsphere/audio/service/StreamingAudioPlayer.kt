@@ -33,15 +33,16 @@ class StreamingAudioPlayer {
 
     private var audioTrack: AudioTrack? = null
 
-    // Pipeline de efeitos
+    // Pipeline de efeitos — EQ e BassBoost são recriados por música
     var haasProcessor: HaasProcessor? = null
         private set
     var equalizerProcessor: EqualizerProcessor? = null
         private set
     var bassBoostProcessor: BassBoostProcessor? = null
         private set
+
+    // ConvolutionEngine é INJETADO externamente — persiste entre músicas
     var convolutionEngine: ConvolutionEngine? = null
-        private set
 
     @Volatile private var playbackThread: Thread? = null
     private val threadLock = Any()
@@ -66,7 +67,7 @@ class StreamingAudioPlayer {
         }
 
         generation.incrementAndGet()
-        release()
+        releaseInternal() // Não toca no convolutionEngine
 
         this.filePath = filePath
         isStopped = false
@@ -118,7 +119,9 @@ class StreamingAudioPlayer {
                 }
                 equalizerProcessor = EqualizerProcessor(sampleRate)
                 bassBoostProcessor = BassBoostProcessor(sampleRate)
-                convolutionEngine = ConvolutionEngine(sampleRate)
+
+                // Reseta apenas os buffers internos do convolution (não os IRs)
+                convolutionEngine?.reset()
 
                 isPreparedFlag = true
                 android.os.Handler(android.os.Looper.getMainLooper()).post {
@@ -238,11 +241,11 @@ class StreamingAudioPlayer {
                         val samples = ShortArray(shortBuf.remaining())
                         shortBuf.get(samples)
 
-                        // Pipeline de efeitos — ordem importa
-                        bassBoostProcessor?.process(samples)   // 1. Grave
-                        equalizerProcessor?.process(samples)   // 2. EQ
-                        convolutionEngine?.process(samples)    // 3. Convolução 3D
-                        haasProcessor?.process(samples)        // 4. Haas (simples, se ativo)
+                        // Pipeline — ordem importa
+                        bassBoostProcessor?.process(samples)
+                        equalizerProcessor?.process(samples)
+                        convolutionEngine?.process(samples)
+                        haasProcessor?.process(samples)
 
                         audioTrack?.write(samples, 0, samples.size)
                     }
@@ -281,7 +284,7 @@ class StreamingAudioPlayer {
     fun pause() {
         isPlayingFlag = false
         audioTrack?.pause()
-        Log.d(TAG, "⏸️ Pausado (thread mantida viva)")
+        Log.d(TAG, "⏸️ Pausado")
     }
 
     fun stop() {
@@ -295,17 +298,23 @@ class StreamingAudioPlayer {
         Log.d(TAG, "⏹️ Parado")
     }
 
-    fun release() {
+    // Libera tudo EXCETO o convolutionEngine (que é gerenciado pelo MusicService)
+    private fun releaseInternal() {
         stop()
         try { audioTrack?.release() } catch (e: Exception) { }
         audioTrack = null
         haasProcessor = null
         equalizerProcessor = null
         bassBoostProcessor = null
-        convolutionEngine = null
         isPreparedFlag = false
         filePath = null
-        Log.d(TAG, "🗑️ Liberado")
+    }
+
+    // Chamado apenas quando o MusicService é destruído
+    fun release() {
+        releaseInternal()
+        convolutionEngine = null
+        Log.d(TAG, "🗑️ Liberado (total)")
     }
 
     fun seekTo(positionMs: Long) {
@@ -348,7 +357,6 @@ class StreamingAudioPlayer {
             if (haasDelayMs == 0) setEnabled(false)
             else { setDelayMs(haasDelayMs); setEnabled(true) }
         }
-        Log.d(TAG, "🎧 Haas: ${haasDelayMs}ms")
     }
 
     fun setPitch(semitones: Int) {
@@ -370,6 +378,10 @@ class StreamingAudioPlayer {
                 if (params != null) audioTrack?.playbackParams = params
             }
         } catch (e: Exception) { Log.e(TAG, "❌ Speed: ${e.message}") }
+    }
+
+    fun setReverse(enabled: Boolean) {
+        Log.w(TAG, "Reverse requer decodificação invertida — não implementado")
     }
 
     private fun findAudioTrack(extractor: MediaExtractor): Int {
