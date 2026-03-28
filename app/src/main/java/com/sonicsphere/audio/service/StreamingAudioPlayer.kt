@@ -18,7 +18,6 @@ class StreamingAudioPlayer {
     companion object {
         private const val TAG = "StreamingAudioPlayer"
         private const val TIMEOUT_US = 5000L
-        // Buffer pequeno para seek responsivo (~50ms)
         private const val BUFFER_FACTOR = 2
     }
 
@@ -26,7 +25,6 @@ class StreamingAudioPlayer {
     var onCompletion: (() -> Unit)? = null
     var onError: ((String) -> Unit)? = null
 
-    // Generation counter — invalida threads antigas ao trocar música
     private val generation = AtomicInteger(0)
 
     @Volatile private var isPlayingFlag = false
@@ -34,7 +32,15 @@ class StreamingAudioPlayer {
     private var isPreparedFlag = false
 
     private var audioTrack: AudioTrack? = null
-    private var haasProcessor: HaasProcessor? = null
+
+    // Pipeline de efeitos
+    var haasProcessor: HaasProcessor? = null
+        private set
+    var equalizerProcessor: EqualizerProcessor? = null
+        private set
+    var bassBoostProcessor: BassBoostProcessor? = null
+        private set
+
     private var playbackThread: Thread? = null
 
     private var filePath: String? = null
@@ -45,6 +51,7 @@ class StreamingAudioPlayer {
     private val seekRequestUs = AtomicLong(-1L)
     @Volatile private var currentPositionUs = 0L
 
+    // Valores salvos para reaplicar após prepare
     private var haasDelayMs = 0
     private var pitchSemitones = 0
     private var speedFactor = 1.0f
@@ -56,7 +63,6 @@ class StreamingAudioPlayer {
             return
         }
 
-        // Incrementa geração — invalida qualquer thread anterior
         generation.incrementAndGet()
         release()
 
@@ -67,7 +73,6 @@ class StreamingAudioPlayer {
         currentPositionUs = 0L
         seekRequestUs.set(-1L)
 
-        // Prepare em background para não travar a UI (Bug 3)
         Thread {
             try {
                 val extractor = MediaExtractor()
@@ -106,12 +111,15 @@ class StreamingAudioPlayer {
                     AudioManager.AUDIO_SESSION_ID_GENERATE
                 )
 
+                // Inicializa processadores com o sample rate real
                 haasProcessor = HaasProcessor(sampleRate).apply {
                     if (haasDelayMs > 0) {
                         setDelayMs(haasDelayMs)
                         setEnabled(true)
                     }
                 }
+                equalizerProcessor = EqualizerProcessor(sampleRate)
+                bassBoostProcessor = BassBoostProcessor(sampleRate)
 
                 isPreparedFlag = true
                 android.os.Handler(android.os.Looper.getMainLooper()).post {
@@ -135,7 +143,6 @@ class StreamingAudioPlayer {
         isStopped = false
 
         val myGeneration = generation.get()
-
         playbackThread = Thread {
             runPlaybackLoop(myGeneration)
         }.apply {
@@ -176,7 +183,6 @@ class StreamingAudioPlayer {
 
             while (!isStopped && generation.get() == myGeneration) {
 
-                // Seek — processa imediatamente (Bug 2)
                 val seekTarget = seekRequestUs.getAndSet(-1L)
                 if (seekTarget >= 0) {
                     extractor.seekTo(seekTarget, MediaExtractor.SEEK_TO_CLOSEST_SYNC)
@@ -192,7 +198,6 @@ class StreamingAudioPlayer {
                     continue
                 }
 
-                // Input
                 if (!isEOS) {
                     val inputIdx = codec.dequeueInputBuffer(TIMEOUT_US)
                     if (inputIdx >= 0) {
@@ -211,7 +216,6 @@ class StreamingAudioPlayer {
                     }
                 }
 
-                // Output
                 val outputIdx = codec.dequeueOutputBuffer(info, TIMEOUT_US)
                 if (outputIdx >= 0) {
                     val outputBuf = codec.getOutputBuffer(outputIdx)
@@ -227,7 +231,11 @@ class StreamingAudioPlayer {
                         val samples = ShortArray(shortBuf.remaining())
                         shortBuf.get(samples)
 
-                        haasProcessor?.process(samples)
+                        // Pipeline de efeitos — ordem importa
+                        bassBoostProcessor?.process(samples)  // 1. Grave
+                        equalizerProcessor?.process(samples)  // 2. EQ
+                        haasProcessor?.process(samples)       // 3. Espacialização
+
                         audioTrack?.write(samples, 0, samples.size)
                     }
 
@@ -279,6 +287,8 @@ class StreamingAudioPlayer {
         try { audioTrack?.release() } catch (e: Exception) { }
         audioTrack = null
         haasProcessor = null
+        equalizerProcessor = null
+        bassBoostProcessor = null
         isPreparedFlag = false
         filePath = null
         Log.d(TAG, "🗑️ Liberado")
@@ -286,11 +296,9 @@ class StreamingAudioPlayer {
 
     fun seekTo(positionMs: Long) {
         val posUs = positionMs * 1000L
-        // Posta o seek atomicamente — loop pega na próxima iteração sem esperar write()
         seekRequestUs.set(posUs)
         currentPositionUs = posUs
 
-        // Se pausado, inicia a thread para processar o seek
         if (!isPlayingFlag && isPreparedFlag) {
             if (playbackThread?.isAlive != true) {
                 isPlayingFlag = true
@@ -303,12 +311,8 @@ class StreamingAudioPlayer {
                 }
             }
             android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
-                if (!isPlayingFlag) {
-                    audioTrack?.pause()
-                } else {
-                    isPlayingFlag = false
-                    audioTrack?.pause()
-                }
+                isPlayingFlag = false
+                audioTrack?.pause()
             }, 250)
         }
 
