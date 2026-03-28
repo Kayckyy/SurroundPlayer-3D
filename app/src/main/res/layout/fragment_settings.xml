@@ -474,7 +474,6 @@
                             android:layout_height="wrap_content"
                             android:text="Não carregado"
                             android:textColor="@color/gray"
-                            android:layout_height="wrap_content"
                             android:orientation="horizontal"
                             android:gravity="center_vertical">
 
