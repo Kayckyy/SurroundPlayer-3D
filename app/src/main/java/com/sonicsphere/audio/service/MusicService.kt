@@ -488,26 +488,37 @@ class MusicService : Service() {
         }
     }
 
+        // Substitui o audioFocusChangeListener existente no MusicService
+    private var wasPlayingBeforeFocusLoss = false
+
     private val audioFocusChangeListener = AudioManager.OnAudioFocusChangeListener { focusChange ->
         when (focusChange) {
             AudioManager.AUDIOFOCUS_LOSS -> {
-                Log.d("MusicService", "🔇 Perda permanente de foco de áudio")
-                pauseMusic()
+                // Perda permanente — pausa e não retoma automaticamente
+                wasPlayingBeforeFocusLoss = false
+                if (isPlaying()) pauseMusic()
+                Log.d("MusicService", "🔇 Foco perdido permanentemente")
             }
             AudioManager.AUDIOFOCUS_LOSS_TRANSIENT -> {
-                Log.d("MusicService", "⏸️ Perda temporária de foco de áudio")
-                if (isPlaying()) {
-                    pauseMusic()
-                }
+                // Perda temporária — guarda estado para retomar depois
+                wasPlayingBeforeFocusLoss = isPlaying()
+                if (wasPlayingBeforeFocusLoss) pauseMusic()
+                Log.d("MusicService", "⏸️ Foco perdido temporariamente")
             }
             AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> {
-                Log.d("MusicService", "🔈 Ducking de áudio")
+                Log.d("MusicService", "🔈 Ducking")
             }
             AudioManager.AUDIOFOCUS_GAIN -> {
-                Log.d("MusicService", "🔊 Foco de áudio recuperado")
+                // Retoma só se estava tocando antes da perda transiente
+                if (wasPlayingBeforeFocusLoss) {
+                    wasPlayingBeforeFocusLoss = false
+                    resumeMusic()
+                }
+                Log.d("MusicService", "🔊 Foco recuperado")
             }
         }
     }
+
 
     fun handlePreviousWithThreshold() {
         val currentPosition = getCurrentPosition()
