@@ -19,26 +19,11 @@ class SettingsFragment : Fragment() {
 
     private var _binding: FragmentSettingsBinding? = null
     private val binding get() = _binding!!
-    private var isServiceReady = false
     private val handler = Handler(Looper.getMainLooper())
     private var updateRunnable: Runnable? = null
 
-    // Mapa slot → label do status no layout
-    private val slotStatusMap by lazy {
-        mapOf(
-            ConvolutionEngine.IrSlot.LEFT  to binding.textIrLeft,
-            ConvolutionEngine.IrSlot.RIGHT to binding.textIrRight,
-            ConvolutionEngine.IrSlot.FRONT to binding.textIrFront,
-            ConvolutionEngine.IrSlot.TOP   to binding.textIrTop,
-            ConvolutionEngine.IrSlot.BACK  to binding.textIrBack,
-            ConvolutionEngine.IrSlot.SUB   to binding.textIrSub,
-        )
-    }
-
     override fun onCreateView(
-        inflater: LayoutInflater,
-        container: ViewGroup?,
-        savedInstanceState: Bundle?
+        inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?
     ): View {
         _binding = FragmentSettingsBinding.inflate(inflater, container, false)
         return binding.root
@@ -46,17 +31,17 @@ class SettingsFragment : Fragment() {
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
-        setupSettings()
-        setupBinauralSection()
+        setupEqualizer()
+        setupBassBoost()
+        setupBinaural()
+        setupReverb()
+        setupHaas()
         startPeriodicUpdate()
     }
 
     override fun onResume() {
         super.onResume()
-        val service = getMusicService()
-        if (service != null && !isServiceReady) onServiceReady()
-        updateUIFromService()
-        refreshIrStatus()
+        syncAllFromService()
     }
 
     override fun onPause() {
@@ -64,93 +49,112 @@ class SettingsFragment : Fragment() {
         stopPeriodicUpdate()
     }
 
-    private fun startPeriodicUpdate() {
-        updateRunnable = object : Runnable {
-            override fun run() {
-                if (binding.switchEqualizer.isChecked &&
-                    binding.equalizerBandsContainer.childCount == 0) {
-                    setupEqualizerBands()
-                }
-                handler.postDelayed(this, 1000)
-            }
+    // ========== EQUALIZER ==========
+
+    private fun setupEqualizer() {
+        binding.switchEqualizer.setOnCheckedChangeListener { _, isChecked ->
+            getMusicService()?.setEqualizerEnabled(isChecked)
+            binding.equalizerBandsContainer.visibility =
+                if (isChecked) View.VISIBLE else View.GONE
+            if (isChecked) handler.postDelayed({ setupEqualizerBands() }, 300)
         }
-        handler.post(updateRunnable!!)
     }
 
-    private fun stopPeriodicUpdate() {
-        updateRunnable?.let { handler.removeCallbacks(it) }
+    private fun setupEqualizerBands() {
+        val service = getMusicService() ?: return
+        val bands = service.getEqualizerNumberOfBands() ?: return
+        val range = service.getEqualizerBandLevelRange() ?: return
+        binding.equalizerBandsContainer.removeAllViews()
+
+        for (band in 0 until bands.toInt()) {
+            val v = layoutInflater.inflate(
+                com.sonicsphere.audio.R.layout.item_equalizer_band,
+                binding.equalizerBandsContainer, false)
+            val label   = v.findViewById<android.widget.TextView>(com.sonicsphere.audio.R.id.bandLabel)
+            val seekBar = v.findViewById<SeekBar>(com.sonicsphere.audio.R.id.bandSeekBar)
+            val value   = v.findViewById<android.widget.TextView>(com.sonicsphere.audio.R.id.bandValue)
+
+            val freq = service.getEqualizerCenterFreq(band.toShort()) ?: 0
+            label.text = if (freq >= 1000) "${freq/1000}kHz" else "${freq}Hz"
+
+            val min = range[0].toInt(); val max = range[1].toInt()
+            seekBar.max = max - min
+            val cur = service.getEqualizerBandLevel(band.toShort())?.toInt() ?: 0
+            seekBar.progress = cur - min
+            value.text = "${cur / 100}dB"
+
+            seekBar.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+                override fun onProgressChanged(sb: SeekBar?, p: Int, fromUser: Boolean) {
+                    if (!fromUser) return
+                    val level = (p + min).toShort()
+                    service.setEqualizerBandLevel(band.toShort(), level)
+                    value.text = "${level / 100}dB"
+                }
+                override fun onStartTrackingTouch(sb: SeekBar?) {}
+                override fun onStopTrackingTouch(sb: SeekBar?) {}
+            })
+            binding.equalizerBandsContainer.addView(v)
+        }
     }
 
-    private fun onServiceReady() {
-        isServiceReady = true
-        updateUIFromService()
+    // ========== BASS BOOST ==========
+
+    private fun setupBassBoost() {
+        binding.switchBassBoost.setOnCheckedChangeListener { _, isChecked ->
+            getMusicService()?.setBassBoostEnabled(isChecked)
+            binding.bassBoostControlsContainer.visibility =
+                if (isChecked) View.VISIBLE else View.GONE
+        }
+        binding.seekBarBassBoost.max = 500
+        binding.seekBarBassBoost.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(sb: SeekBar?, p: Int, fromUser: Boolean) {
+                if (!fromUser) return
+                getMusicService()?.setBassBoostStrength(p.toShort())
+                binding.textBassBoostValue.text = "${p / 10}%"
+            }
+            override fun onStartTrackingTouch(sb: SeekBar?) {}
+            override fun onStopTrackingTouch(sb: SeekBar?) {}
+        })
     }
 
-    // ========== SEÇÃO IR BINAURAL ==========
+    // ========== BINAURAL (L/R apenas) ==========
 
-    private fun setupBinauralSection() {
+    private fun setupBinaural() {
         binding.switchBinaural.setOnCheckedChangeListener { _, isChecked ->
+            getMusicService()?.setBinauralEnabled(isChecked)
             binding.binauralSlotsContainer.visibility =
                 if (isChecked) View.VISIBLE else View.GONE
-            getMusicService()?.setBinauralEnabled(isChecked)
             if (isChecked) refreshIrStatus()
         }
 
-        // Botões carregar
         binding.btnIrLeft.setOnClickListener  { pickIrFile(ConvolutionEngine.IrSlot.LEFT) }
         binding.btnIrRight.setOnClickListener { pickIrFile(ConvolutionEngine.IrSlot.RIGHT) }
-        binding.btnIrFront.setOnClickListener { pickIrFile(ConvolutionEngine.IrSlot.FRONT) }
-        binding.btnIrTop.setOnClickListener   { pickIrFile(ConvolutionEngine.IrSlot.TOP) }
-        binding.btnIrBack.setOnClickListener  { pickIrFile(ConvolutionEngine.IrSlot.BACK) }
-        binding.btnIrSub.setOnClickListener   { pickIrFile(ConvolutionEngine.IrSlot.SUB) }
 
-        // Botões limpar
-        binding.btnIrLeftClear.setOnClickListener  { clearIrSlot(ConvolutionEngine.IrSlot.LEFT) }
-        binding.btnIrRightClear.setOnClickListener { clearIrSlot(ConvolutionEngine.IrSlot.RIGHT) }
-        binding.btnIrFrontClear.setOnClickListener { clearIrSlot(ConvolutionEngine.IrSlot.FRONT) }
-        binding.btnIrTopClear.setOnClickListener   { clearIrSlot(ConvolutionEngine.IrSlot.TOP) }
-        binding.btnIrBackClear.setOnClickListener  { clearIrSlot(ConvolutionEngine.IrSlot.BACK) }
-        binding.btnIrSubClear.setOnClickListener   { clearIrSlot(ConvolutionEngine.IrSlot.SUB) }
+        binding.btnIrLeftClear.setOnClickListener  { resetIrToDefault(ConvolutionEngine.IrSlot.LEFT) }
+        binding.btnIrRightClear.setOnClickListener { resetIrToDefault(ConvolutionEngine.IrSlot.RIGHT) }
     }
 
-    /**
-     * Mostra dialog com lista de WAVs disponíveis na pasta ir/ e carrega o escolhido.
-     */
     private fun pickIrFile(slot: ConvolutionEngine.IrSlot) {
         val ctx = requireContext()
-        val irFiles = IrLoader.listAvailableIrs(ctx)
-
-        if (irFiles.isEmpty()) {
-            Toast.makeText(
-                ctx,
-                "Nenhum WAV em Android/data/com.sonicsphere.audio/files/ir/",
-                Toast.LENGTH_LONG
-            ).show()
+        val files = IrLoader.listAvailableIrs(ctx)
+        if (files.isEmpty()) {
+            Toast.makeText(ctx, "Nenhum WAV em Android/data/com.sonicsphere.audio/files/ir/",
+                Toast.LENGTH_LONG).show()
             return
         }
-
-        val names = irFiles.map { it.name }.toTypedArray()
+        val engine = getMusicService()?.getConvolutionEngine() ?: run {
+            Toast.makeText(ctx, "Player nao iniciado", Toast.LENGTH_SHORT).show()
+            return
+        }
         AlertDialog.Builder(ctx)
-            .setTitle("Escolher IR — ${slot.name}")
-            .setItems(names) { _, which ->
-                val file = irFiles[which]
-                val engine = getMusicService()?.getConvolutionEngine() ?: run {
-                    Toast.makeText(ctx, "Player não iniciado ainda", Toast.LENGTH_SHORT).show()
-                    return@setItems
-                }
-
-                setSlotStatus(slot, "Carregando…")
-
+            .setTitle("IR para ${slot.name}")
+            .setItems(files.map { it.name }.toTypedArray()) { _, i ->
+                setIrStatus(slot, "Carregando...")
                 Thread {
-                    IrLoader.loadIntoSlot(file, slot, engine) { success, error ->
+                    IrLoader.loadIntoSlot(files[i], slot, engine) { ok, err ->
                         handler.post {
-                            if (success) {
-                                setSlotStatus(slot, file.name)
-                                Toast.makeText(ctx, "✅ ${slot.name}: ${file.name}", Toast.LENGTH_SHORT).show()
-                            } else {
-                                setSlotStatus(slot, "Erro: $error")
-                                Toast.makeText(ctx, "❌ Falha: $error", Toast.LENGTH_LONG).show()
-                            }
+                            if (ok) setIrStatus(slot, files[i].name)
+                            else    setIrStatus(slot, "Erro: $err")
                         }
                     }
                 }.start()
@@ -159,141 +163,155 @@ class SettingsFragment : Fragment() {
             .show()
     }
 
-    private fun clearIrSlot(slot: ConvolutionEngine.IrSlot) {
-        getMusicService()?.getConvolutionEngine()?.unloadIr(slot)
-        setSlotStatus(slot, "Não carregado")
-        Toast.makeText(requireContext(), "${slot.name} removido", Toast.LENGTH_SHORT).show()
+    private fun resetIrToDefault(slot: ConvolutionEngine.IrSlot) {
+        val engine = getMusicService()?.getConvolutionEngine() ?: return
+        Thread {
+            val ctx = requireContext()
+            val wav = IrLoader.readWav(
+                ctx.assets.open("ir/${slot.name.lowercase()}.wav")
+            ) ?: return@Thread
+            engine.loadIr(slot, wav.left, wav.right)
+            getMusicService()?.unloadConvolutionIr(slot) // limpa path salvo
+            handler.post { setIrStatus(slot, "Padrao (asset)") }
+        }.start()
     }
 
-    private fun setSlotStatus(slot: ConvolutionEngine.IrSlot, text: String) {
-        slotStatusMap[slot]?.text = text
+    private fun setIrStatus(slot: ConvolutionEngine.IrSlot, text: String) {
+        when (slot) {
+            ConvolutionEngine.IrSlot.LEFT  -> binding.textIrLeft.text  = text
+            ConvolutionEngine.IrSlot.RIGHT -> binding.textIrRight.text = text
+        }
     }
 
     private fun refreshIrStatus() {
         val engine = getMusicService()?.getConvolutionEngine() ?: return
-        for ((slot, textView) in slotStatusMap) {
-            textView.text = if (engine.isSlotLoaded(slot)) "✅ Carregado" else "Não carregado"
-        }
+        setIrStatus(ConvolutionEngine.IrSlot.LEFT,
+            if (engine.isSlotLoaded(ConvolutionEngine.IrSlot.LEFT)) "Carregado" else "Padrao (asset)")
+        setIrStatus(ConvolutionEngine.IrSlot.RIGHT,
+            if (engine.isSlotLoaded(ConvolutionEngine.IrSlot.RIGHT)) "Carregado" else "Padrao (asset)")
     }
 
-    // ========== EQUALIZER ==========
+    // ========== REVERB ==========
 
-    private fun setupSettings() {
-        binding.switchEqualizer.setOnCheckedChangeListener { _, isChecked ->
-            getMusicService()?.setEqualizerEnabled(isChecked)
-            updateEqualizerVisibility(isChecked)
-            if (isChecked) handler.postDelayed({ setupEqualizerBands() }, 500)
+    private fun setupReverb() {
+        binding.switchReverb.setOnCheckedChangeListener { _, isChecked ->
+            getMusicService()?.setReverbEnabled(isChecked)
+            binding.reverbControlsContainer.visibility =
+                if (isChecked) View.VISIBLE else View.GONE
         }
 
-        binding.switchBassBoost.setOnCheckedChangeListener { _, isChecked ->
-            getMusicService()?.setBassBoostEnabled(isChecked)
-            updateBassBoostVisibility(isChecked)
-        }
-
-        binding.seekBarBassBoost.max = 500
-        binding.seekBarBassBoost.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
-            override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
-                if (fromUser) {
-                    getMusicService()?.setBassBoostStrength(progress.toShort())
-                    binding.textBassBoostValue.text = "${progress / 10}%"
-                }
-            }
-            override fun onStartTrackingTouch(seekBar: SeekBar?) {}
-            override fun onStopTrackingTouch(seekBar: SeekBar?) {}
+        binding.seekBarReverbRoomSize.max = 100
+        binding.seekBarReverbRoomSize.setOnSeekBarChangeListener(seekListener { p ->
+            val v = p / 100f
+            getMusicService()?.setReverbRoomSize(v)
+            binding.textReverbRoomSize.text = "$p%"
         })
 
-        binding.radioGroupHaas.setOnCheckedChangeListener { _, checkedId ->
-            val delayMs = when (checkedId) {
+        binding.seekBarReverbWet.max = 100
+        binding.seekBarReverbWet.setOnSeekBarChangeListener(seekListener { p ->
+            val v = p / 100f
+            getMusicService()?.setReverbWet(v)
+            binding.textReverbWet.text = "$p%"
+        })
+
+        binding.seekBarReverbDamping.max = 100
+        binding.seekBarReverbDamping.setOnSeekBarChangeListener(seekListener { p ->
+            val v = p / 100f
+            getMusicService()?.setReverbDamping(v)
+            binding.textReverbDamping.text = "$p%"
+        })
+    }
+
+    // ========== HAAS ==========
+
+    private fun setupHaas() {
+        binding.radioGroupHaas.setOnCheckedChangeListener { _, id ->
+            val ms = when (id) {
                 binding.radioHaasShort.id  -> 10
                 binding.radioHaasMedium.id -> 30
                 binding.radioHaasLong.id   -> 50
                 else -> 0
             }
-            getMusicService()?.setHaasDelay(delayMs)
-        }
-
-        updateUIFromService()
-    }
-
-    private fun setupEqualizerBands() {
-        val service = getMusicService() ?: return
-        val numberOfBands = service.getEqualizerNumberOfBands() ?: return
-        val bandLevelRange = service.getEqualizerBandLevelRange() ?: return
-
-        binding.equalizerBandsContainer.removeAllViews()
-
-        for (band in 0 until numberOfBands.toInt()) {
-            val bandView = layoutInflater.inflate(
-                com.sonicsphere.audio.R.layout.item_equalizer_band,
-                binding.equalizerBandsContainer, false
-            )
-            val bandLabel   = bandView.findViewById<android.widget.TextView>(com.sonicsphere.audio.R.id.bandLabel)
-            val bandSeekBar = bandView.findViewById<SeekBar>(com.sonicsphere.audio.R.id.bandSeekBar)
-            val bandValue   = bandView.findViewById<android.widget.TextView>(com.sonicsphere.audio.R.id.bandValue)
-
-            val centerFreq = service.getEqualizerCenterFreq(band.toShort()) ?: 0
-            bandLabel.text = if (centerFreq >= 1000) "${centerFreq / 1000}kHz" else "${centerFreq}Hz"
-
-            val minLevel = bandLevelRange[0].toInt()
-            val maxLevel = bandLevelRange[1].toInt()
-            bandSeekBar.max = maxLevel - minLevel
-
-            val currentLevel = service.getEqualizerBandLevel(band.toShort())?.toInt() ?: 0
-            bandSeekBar.progress = currentLevel - minLevel
-            bandValue.text = "${currentLevel / 100}dB"
-
-            bandSeekBar.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
-                override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
-                    if (fromUser) {
-                        val level = (progress + minLevel).toShort()
-                        service.setEqualizerBandLevel(band.toShort(), level)
-                        bandValue.text = "${level / 100}dB"
-                    }
-                }
-                override fun onStartTrackingTouch(seekBar: SeekBar?) {}
-                override fun onStopTrackingTouch(seekBar: SeekBar?) {}
-            })
-
-            binding.equalizerBandsContainer.addView(bandView)
+            getMusicService()?.setHaasDelay(ms)
         }
     }
 
-    private fun updateUIFromService() {
-        val service = getMusicService() ?: return
+    // ========== SYNC COM SERVICE ==========
 
-        val equalizerEnabled = service.isEqualizerEnabled()
-        binding.switchEqualizer.isChecked = equalizerEnabled
-        updateEqualizerVisibility(equalizerEnabled)
-        if (equalizerEnabled && binding.equalizerBandsContainer.childCount == 0) setupEqualizerBands()
+    private fun syncAllFromService() {
+        val s = getMusicService() ?: return
 
-        val bassBoostEnabled = service.isBassBoostEnabled()
-        binding.switchBassBoost.isChecked = bassBoostEnabled
-        updateBassBoostVisibility(bassBoostEnabled)
-        val bassStrength = service.getBassBoostStrength()?.toInt() ?: 0
-        binding.seekBarBassBoost.progress = bassStrength
-        binding.textBassBoostValue.text = "${bassStrength / 10}%"
+        // Equalizer
+        binding.switchEqualizer.isChecked = s.isEqualizerEnabled()
+        binding.equalizerBandsContainer.visibility =
+            if (s.isEqualizerEnabled()) View.VISIBLE else View.GONE
+        if (s.isEqualizerEnabled() && binding.equalizerBandsContainer.childCount == 0)
+            setupEqualizerBands()
 
-        val haasDelay = service.getHaasDelay()
-        when (haasDelay) {
+        // Bass Boost
+        binding.switchBassBoost.isChecked = s.isBassBoostEnabled()
+        binding.bassBoostControlsContainer.visibility =
+            if (s.isBassBoostEnabled()) View.VISIBLE else View.GONE
+        val strength = s.getBassBoostStrength()?.toInt() ?: 0
+        binding.seekBarBassBoost.progress = strength
+        binding.textBassBoostValue.text = "${strength / 10}%"
+
+        // Binaural
+        binding.switchBinaural.isChecked = s.isBinauralEnabled()
+        binding.binauralSlotsContainer.visibility =
+            if (s.isBinauralEnabled()) View.VISIBLE else View.GONE
+        if (s.isBinauralEnabled()) refreshIrStatus()
+
+        // Reverb
+        val reverbOn = s.isReverbEnabled()
+        binding.switchReverb.isChecked = reverbOn
+        binding.reverbControlsContainer.visibility =
+            if (reverbOn) View.VISIBLE else View.GONE
+
+        val roomPct = (s.getReverbRoomSize() * 100).toInt()
+        binding.seekBarReverbRoomSize.progress = roomPct
+        binding.textReverbRoomSize.text = "$roomPct%"
+
+        val wetPct = (s.getReverbWet() * 100).toInt()
+        binding.seekBarReverbWet.progress = wetPct
+        binding.textReverbWet.text = "$wetPct%"
+
+        val dampPct = (s.getReverbDamping() * 100).toInt()
+        binding.seekBarReverbDamping.progress = dampPct
+        binding.textReverbDamping.text = "$dampPct%"
+
+        // Haas
+        when (s.getHaasDelay()) {
             10   -> binding.radioHaasShort.isChecked  = true
             30   -> binding.radioHaasMedium.isChecked = true
             50   -> binding.radioHaasLong.isChecked   = true
             else -> binding.radioHaasOff.isChecked    = true
         }
-
-        val binauralEnabled = service.isBinauralEnabled()
-        binding.switchBinaural.isChecked = binauralEnabled
-        binding.binauralSlotsContainer.visibility =
-            if (binauralEnabled) View.VISIBLE else View.GONE
-        if (binauralEnabled) refreshIrStatus()
     }
 
-    private fun updateEqualizerVisibility(visible: Boolean) {
-        binding.equalizerBandsContainer.visibility = if (visible) View.VISIBLE else View.GONE
+    // ========== UTILITÁRIOS ==========
+
+    private fun seekListener(onFromUser: (Int) -> Unit) = object : SeekBar.OnSeekBarChangeListener {
+        override fun onProgressChanged(sb: SeekBar?, p: Int, fromUser: Boolean) {
+            if (fromUser) onFromUser(p)
+        }
+        override fun onStartTrackingTouch(sb: SeekBar?) {}
+        override fun onStopTrackingTouch(sb: SeekBar?) {}
     }
 
-    private fun updateBassBoostVisibility(visible: Boolean) {
-        binding.bassBoostControlsContainer.visibility = if (visible) View.VISIBLE else View.GONE
+    private fun startPeriodicUpdate() {
+        updateRunnable = object : Runnable {
+            override fun run() {
+                if (binding.switchEqualizer.isChecked &&
+                    binding.equalizerBandsContainer.childCount == 0) setupEqualizerBands()
+                handler.postDelayed(this, 1000)
+            }
+        }
+        handler.post(updateRunnable!!)
+    }
+
+    private fun stopPeriodicUpdate() {
+        updateRunnable?.let { handler.removeCallbacks(it) }
     }
 
     private fun getMusicService(): MusicService? =
