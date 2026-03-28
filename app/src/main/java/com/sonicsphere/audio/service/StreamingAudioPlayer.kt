@@ -40,8 +40,11 @@ class StreamingAudioPlayer {
         private set
     var bassBoostProcessor: BassBoostProcessor? = null
         private set
+    var convolutionEngine: ConvolutionEngine? = null
+        private set
 
-    private var playbackThread: Thread? = null
+    @Volatile private var playbackThread: Thread? = null
+    private val threadLock = Any()
 
     private var filePath: String? = null
     private var sampleRate = 44100
@@ -51,7 +54,6 @@ class StreamingAudioPlayer {
     private val seekRequestUs = AtomicLong(-1L)
     @Volatile private var currentPositionUs = 0L
 
-    // Valores salvos para reaplicar após prepare
     private var haasDelayMs = 0
     private var pitchSemitones = 0
     private var speedFactor = 1.0f
@@ -111,15 +113,12 @@ class StreamingAudioPlayer {
                     AudioManager.AUDIO_SESSION_ID_GENERATE
                 )
 
-                // Inicializa processadores com o sample rate real
                 haasProcessor = HaasProcessor(sampleRate).apply {
-                    if (haasDelayMs > 0) {
-                        setDelayMs(haasDelayMs)
-                        setEnabled(true)
-                    }
+                    if (haasDelayMs > 0) { setDelayMs(haasDelayMs); setEnabled(true) }
                 }
                 equalizerProcessor = EqualizerProcessor(sampleRate)
                 bassBoostProcessor = BassBoostProcessor(sampleRate)
+                convolutionEngine = ConvolutionEngine(sampleRate)
 
                 isPreparedFlag = true
                 android.os.Handler(android.os.Looper.getMainLooper()).post {
@@ -132,26 +131,33 @@ class StreamingAudioPlayer {
                 Log.e(TAG, "❌ Erro ao preparar", e)
                 postError("Erro ao preparar: ${e.message}")
             }
-        }.apply { isDaemon = true; start() }
+        }.apply { isDaemon = true; name = "PrepareThread"; start() }
     }
 
     fun play() {
         if (!isPreparedFlag) return
-        if (isPlayingFlag && playbackThread?.isAlive == true) return
 
         isPlayingFlag = true
         isStopped = false
 
-        val myGeneration = generation.get()
-        playbackThread = Thread {
-            runPlaybackLoop(myGeneration)
-        }.apply {
-            name = "AudioPlayback-gen$myGeneration"
-            isDaemon = true
-            start()
-        }
+        synchronized(threadLock) {
+            val existing = playbackThread
+            if (existing != null && existing.isAlive) {
+                audioTrack?.play()
+                Log.d(TAG, "▶️ Retomado (thread existente gen=${generation.get()})")
+                return
+            }
 
-        Log.d(TAG, "▶️ Tocando (gen=$myGeneration)")
+            val myGeneration = generation.get()
+            playbackThread = Thread {
+                runPlaybackLoop(myGeneration)
+            }.apply {
+                name = "AudioPlayback-gen$myGeneration"
+                isDaemon = true
+                start()
+            }
+            Log.d(TAG, "▶️ Nova thread (gen=$myGeneration)")
+        }
     }
 
     private fun runPlaybackLoop(myGeneration: Int) {
@@ -191,6 +197,7 @@ class StreamingAudioPlayer {
                     currentPositionUs = seekTarget
                     audioTrack?.flush()
                     audioTrack?.play()
+                    convolutionEngine?.reset()
                 }
 
                 if (!isPlayingFlag) {
@@ -232,9 +239,10 @@ class StreamingAudioPlayer {
                         shortBuf.get(samples)
 
                         // Pipeline de efeitos — ordem importa
-                        bassBoostProcessor?.process(samples)  // 1. Grave
-                        equalizerProcessor?.process(samples)  // 2. EQ
-                        haasProcessor?.process(samples)       // 3. Espacialização
+                        bassBoostProcessor?.process(samples)   // 1. Grave
+                        equalizerProcessor?.process(samples)   // 2. EQ
+                        convolutionEngine?.process(samples)    // 3. Convolução 3D
+                        haasProcessor?.process(samples)        // 4. Haas (simples, se ativo)
 
                         audioTrack?.write(samples, 0, samples.size)
                     }
@@ -263,6 +271,9 @@ class StreamingAudioPlayer {
         } finally {
             try { codec?.stop(); codec?.release() } catch (e: Exception) { }
             try { extractor?.release() } catch (e: Exception) { }
+            synchronized(threadLock) {
+                if (playbackThread == Thread.currentThread()) playbackThread = null
+            }
             Log.d(TAG, "🔚 Loop gen=$myGeneration encerrado")
         }
     }
@@ -270,15 +281,17 @@ class StreamingAudioPlayer {
     fun pause() {
         isPlayingFlag = false
         audioTrack?.pause()
-        Log.d(TAG, "⏸️ Pausado")
+        Log.d(TAG, "⏸️ Pausado (thread mantida viva)")
     }
 
     fun stop() {
         isStopped = true
         isPlayingFlag = false
         try { audioTrack?.pause(); audioTrack?.flush() } catch (e: Exception) { }
-        playbackThread?.interrupt()
-        playbackThread = null
+        synchronized(threadLock) {
+            playbackThread?.interrupt()
+            playbackThread = null
+        }
         Log.d(TAG, "⏹️ Parado")
     }
 
@@ -289,6 +302,7 @@ class StreamingAudioPlayer {
         haasProcessor = null
         equalizerProcessor = null
         bassBoostProcessor = null
+        convolutionEngine = null
         isPreparedFlag = false
         filePath = null
         Log.d(TAG, "🗑️ Liberado")
@@ -300,20 +314,23 @@ class StreamingAudioPlayer {
         currentPositionUs = posUs
 
         if (!isPlayingFlag && isPreparedFlag) {
-            if (playbackThread?.isAlive != true) {
-                isPlayingFlag = true
-                isStopped = false
-                val myGeneration = generation.get()
-                playbackThread = Thread { runPlaybackLoop(myGeneration) }.apply {
-                    name = "AudioPlayback-seek-gen$myGeneration"
-                    isDaemon = true
-                    start()
+            synchronized(threadLock) {
+                val existing = playbackThread
+                if (existing == null || !existing.isAlive) {
+                    isStopped = false
+                    isPlayingFlag = true
+                    val myGeneration = generation.get()
+                    playbackThread = Thread { runPlaybackLoop(myGeneration) }.apply {
+                        name = "AudioPlayback-seek-gen$myGeneration"
+                        isDaemon = true
+                        start()
+                    }
+                    android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                        isPlayingFlag = false
+                        audioTrack?.pause()
+                    }, 300)
                 }
             }
-            android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
-                isPlayingFlag = false
-                audioTrack?.pause()
-            }, 250)
         }
 
         Log.d(TAG, "⏩ Seek: ${positionMs}ms")
