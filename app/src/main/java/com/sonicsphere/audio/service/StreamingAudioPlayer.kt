@@ -2,6 +2,7 @@ package com.sonicsphere.audio.service
 
 import android.media.AudioAttributes
 import android.media.AudioFormat
+import android.media.AudioManager
 import android.media.AudioTrack
 import android.media.MediaCodec
 import android.media.MediaExtractor
@@ -9,21 +10,28 @@ import android.media.MediaFormat
 import android.util.Log
 import java.io.File
 import java.nio.ByteOrder
+import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicLong
 
 class StreamingAudioPlayer {
 
     companion object {
         private const val TAG = "StreamingAudioPlayer"
-        private const val TIMEOUT_US = 10000L
+        private const val TIMEOUT_US = 5000L
+        // Buffer pequeno para seek responsivo (~50ms)
+        private const val BUFFER_FACTOR = 2
     }
 
     var onPrepared: (() -> Unit)? = null
     var onCompletion: (() -> Unit)? = null
     var onError: ((String) -> Unit)? = null
 
+    // Generation counter — invalida threads antigas ao trocar música
+    private val generation = AtomicInteger(0)
+
     @Volatile private var isPlayingFlag = false
-    private var isPreparedFlag = false
     @Volatile private var isStopped = false
+    private var isPreparedFlag = false
 
     private var audioTrack: AudioTrack? = null
     private var haasProcessor: HaasProcessor? = null
@@ -34,7 +42,7 @@ class StreamingAudioPlayer {
     private var channelCount = 2
     private var durationUs = 0L
 
-    @Volatile private var seekRequestUs: Long = -1L
+    private val seekRequestUs = AtomicLong(-1L)
     @Volatile private var currentPositionUs = 0L
 
     private var haasDelayMs = 0
@@ -42,77 +50,81 @@ class StreamingAudioPlayer {
     private var speedFactor = 1.0f
 
     fun prepare(filePath: String) {
-        try {
-            val file = File(filePath)
-            if (!file.exists()) {
-                onError?.invoke("Arquivo não encontrado")
-                return
-            }
-
-            release()
-
-            this.filePath = filePath
-            isStopped = false
-            isPreparedFlag = false
-            isPlayingFlag = false
-            currentPositionUs = 0L
-            seekRequestUs = -1L
-
-            // Lê formato do arquivo
-            val extractor = MediaExtractor()
-            extractor.setDataSource(filePath)
-            val trackIndex = findAudioTrack(extractor)
-            if (trackIndex < 0) {
-                extractor.release()
-                onError?.invoke("Nenhuma faixa de áudio encontrada")
-                return
-            }
-            val format = extractor.getTrackFormat(trackIndex)
-            sampleRate = format.getInteger(MediaFormat.KEY_SAMPLE_RATE)
-            channelCount = format.getInteger(MediaFormat.KEY_CHANNEL_COUNT)
-            durationUs = if (format.containsKey(MediaFormat.KEY_DURATION))
-                format.getLong(MediaFormat.KEY_DURATION) else 0L
-            extractor.release()
-
-            // Cria AudioTrack
-            val channelMask = if (channelCount >= 2)
-                AudioFormat.CHANNEL_OUT_STEREO else AudioFormat.CHANNEL_OUT_MONO
-            val minBuf = AudioTrack.getMinBufferSize(sampleRate, channelMask,
-                AudioFormat.ENCODING_PCM_16BIT)
-            val bufSize = maxOf(minBuf, 4096) * 4
-
-            audioTrack = AudioTrack(
-                AudioAttributes.Builder()
-                    .setUsage(AudioAttributes.USAGE_MEDIA)
-                    .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
-                    .build(),
-                AudioFormat.Builder()
-                    .setSampleRate(sampleRate)
-                    .setChannelMask(channelMask)
-                    .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
-                    .build(),
-                bufSize,
-                AudioTrack.MODE_STREAM,
-                android.media.AudioManager.AUDIO_SESSION_ID_GENERATE
-            )
-
-            // Inicializa HaasProcessor
-            haasProcessor = HaasProcessor(sampleRate).apply {
-                if (haasDelayMs > 0) {
-                    setDelayMs(haasDelayMs)
-                    setEnabled(true)
-                }
-            }
-
-            isPreparedFlag = true
-            onPrepared?.invoke()
-
-            Log.d(TAG, "✅ Preparado: ${file.name} | ${sampleRate}Hz | ${channelCount}ch | ${durationUs/1000}ms")
-
-        } catch (e: Exception) {
-            Log.e(TAG, "❌ Erro ao preparar", e)
-            onError?.invoke("Erro ao preparar: ${e.message}")
+        val file = File(filePath)
+        if (!file.exists()) {
+            onError?.invoke("Arquivo não encontrado")
+            return
         }
+
+        // Incrementa geração — invalida qualquer thread anterior
+        generation.incrementAndGet()
+        release()
+
+        this.filePath = filePath
+        isStopped = false
+        isPreparedFlag = false
+        isPlayingFlag = false
+        currentPositionUs = 0L
+        seekRequestUs.set(-1L)
+
+        // Prepare em background para não travar a UI (Bug 3)
+        Thread {
+            try {
+                val extractor = MediaExtractor()
+                extractor.setDataSource(filePath)
+                val trackIndex = findAudioTrack(extractor)
+                if (trackIndex < 0) {
+                    extractor.release()
+                    postError("Nenhuma faixa de áudio encontrada")
+                    return@Thread
+                }
+                val format = extractor.getTrackFormat(trackIndex)
+                sampleRate = format.getInteger(MediaFormat.KEY_SAMPLE_RATE)
+                channelCount = format.getInteger(MediaFormat.KEY_CHANNEL_COUNT)
+                durationUs = if (format.containsKey(MediaFormat.KEY_DURATION))
+                    format.getLong(MediaFormat.KEY_DURATION) else 0L
+                extractor.release()
+
+                val channelMask = if (channelCount >= 2)
+                    AudioFormat.CHANNEL_OUT_STEREO else AudioFormat.CHANNEL_OUT_MONO
+                val minBuf = AudioTrack.getMinBufferSize(
+                    sampleRate, channelMask, AudioFormat.ENCODING_PCM_16BIT)
+                val bufSize = maxOf(minBuf, 2048) * BUFFER_FACTOR
+
+                audioTrack = AudioTrack(
+                    AudioAttributes.Builder()
+                        .setUsage(AudioAttributes.USAGE_MEDIA)
+                        .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
+                        .build(),
+                    AudioFormat.Builder()
+                        .setSampleRate(sampleRate)
+                        .setChannelMask(channelMask)
+                        .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
+                        .build(),
+                    bufSize,
+                    AudioTrack.MODE_STREAM,
+                    AudioManager.AUDIO_SESSION_ID_GENERATE
+                )
+
+                haasProcessor = HaasProcessor(sampleRate).apply {
+                    if (haasDelayMs > 0) {
+                        setDelayMs(haasDelayMs)
+                        setEnabled(true)
+                    }
+                }
+
+                isPreparedFlag = true
+                android.os.Handler(android.os.Looper.getMainLooper()).post {
+                    onPrepared?.invoke()
+                }
+
+                Log.d(TAG, "✅ Preparado: ${file.name} | ${sampleRate}Hz | ${channelCount}ch | ${durationUs/1000}ms")
+
+            } catch (e: Exception) {
+                Log.e(TAG, "❌ Erro ao preparar", e)
+                postError("Erro ao preparar: ${e.message}")
+            }
+        }.apply { isDaemon = true; start() }
     }
 
     fun play() {
@@ -122,30 +134,30 @@ class StreamingAudioPlayer {
         isPlayingFlag = true
         isStopped = false
 
+        val myGeneration = generation.get()
+
         playbackThread = Thread {
-            runPlaybackLoop()
+            runPlaybackLoop(myGeneration)
         }.apply {
-            name = "AudioPlaybackThread"
+            name = "AudioPlayback-gen$myGeneration"
             isDaemon = true
             start()
         }
 
-        Log.d(TAG, "▶️ Tocando")
+        Log.d(TAG, "▶️ Tocando (gen=$myGeneration)")
     }
 
-    private fun runPlaybackLoop() {
+    private fun runPlaybackLoop(myGeneration: Int) {
         var extractor: MediaExtractor? = null
         var codec: MediaCodec? = null
 
         try {
             extractor = MediaExtractor()
             extractor.setDataSource(filePath!!)
-
             val trackIndex = findAudioTrack(extractor)
-            if (trackIndex < 0) { onError?.invoke("Faixa não encontrada"); return }
+            if (trackIndex < 0) { postError("Faixa não encontrada"); return }
 
             extractor.selectTrack(trackIndex)
-
             val format = extractor.getTrackFormat(trackIndex)
             val mime = format.getString(MediaFormat.KEY_MIME) ?: return
 
@@ -153,7 +165,6 @@ class StreamingAudioPlayer {
             codec.configure(format, null, null, 0)
             codec.start()
 
-            // Seek inicial
             if (currentPositionUs > 0) {
                 extractor.seekTo(currentPositionUs, MediaExtractor.SEEK_TO_CLOSEST_SYNC)
             }
@@ -163,12 +174,11 @@ class StreamingAudioPlayer {
             val info = MediaCodec.BufferInfo()
             var isEOS = false
 
-            while (!isStopped) {
+            while (!isStopped && generation.get() == myGeneration) {
 
-                // Handle seek
-                val seekTarget = seekRequestUs
+                // Seek — processa imediatamente (Bug 2)
+                val seekTarget = seekRequestUs.getAndSet(-1L)
                 if (seekTarget >= 0) {
-                    seekRequestUs = -1L
                     extractor.seekTo(seekTarget, MediaExtractor.SEEK_TO_CLOSEST_SYNC)
                     codec.flush()
                     isEOS = false
@@ -177,13 +187,12 @@ class StreamingAudioPlayer {
                     audioTrack?.play()
                 }
 
-                // Pausado
                 if (!isPlayingFlag) {
-                    Thread.sleep(30)
+                    Thread.sleep(20)
                     continue
                 }
 
-                // Input ao codec
+                // Input
                 if (!isEOS) {
                     val inputIdx = codec.dequeueInputBuffer(TIMEOUT_US)
                     if (inputIdx >= 0) {
@@ -202,12 +211,14 @@ class StreamingAudioPlayer {
                     }
                 }
 
-                // Output do codec
+                // Output
                 val outputIdx = codec.dequeueOutputBuffer(info, TIMEOUT_US)
                 if (outputIdx >= 0) {
                     val outputBuf = codec.getOutputBuffer(outputIdx)
 
-                    if (outputBuf != null && info.size > 0 && isPlayingFlag) {
+                    if (outputBuf != null && info.size > 0 && isPlayingFlag
+                        && generation.get() == myGeneration) {
+
                         outputBuf.position(info.offset)
                         outputBuf.limit(info.offset + info.size)
 
@@ -216,9 +227,7 @@ class StreamingAudioPlayer {
                         val samples = ShortArray(shortBuf.remaining())
                         shortBuf.get(samples)
 
-                        // Pipeline de efeitos
                         haasProcessor?.process(samples)
-
                         audioTrack?.write(samples, 0, samples.size)
                     }
 
@@ -226,8 +235,10 @@ class StreamingAudioPlayer {
 
                     if (info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0) {
                         isPlayingFlag = false
-                        android.os.Handler(android.os.Looper.getMainLooper()).post {
-                            onCompletion?.invoke()
+                        if (generation.get() == myGeneration) {
+                            android.os.Handler(android.os.Looper.getMainLooper()).post {
+                                onCompletion?.invoke()
+                            }
                         }
                         break
                     }
@@ -235,15 +246,16 @@ class StreamingAudioPlayer {
             }
 
         } catch (e: InterruptedException) {
-            Log.d(TAG, "Thread interrompida")
+            Log.d(TAG, "Thread gen=$myGeneration interrompida")
         } catch (e: Exception) {
-            Log.e(TAG, "❌ Erro no playback", e)
-            android.os.Handler(android.os.Looper.getMainLooper()).post {
-                onError?.invoke("Erro: ${e.message}")
+            if (generation.get() == myGeneration) {
+                Log.e(TAG, "❌ Erro no playback gen=$myGeneration", e)
+                postError("Erro: ${e.message}")
             }
         } finally {
             try { codec?.stop(); codec?.release() } catch (e: Exception) { }
             try { extractor?.release() } catch (e: Exception) { }
+            Log.d(TAG, "🔚 Loop gen=$myGeneration encerrado")
         }
     }
 
@@ -274,49 +286,46 @@ class StreamingAudioPlayer {
 
     fun seekTo(positionMs: Long) {
         val posUs = positionMs * 1000L
-        seekRequestUs = posUs
+        // Posta o seek atomicamente — loop pega na próxima iteração sem esperar write()
+        seekRequestUs.set(posUs)
         currentPositionUs = posUs
 
-        // Se está pausado, inicia a thread para processar o seek e pausa logo após
+        // Se pausado, inicia a thread para processar o seek
         if (!isPlayingFlag && isPreparedFlag) {
             if (playbackThread?.isAlive != true) {
                 isPlayingFlag = true
                 isStopped = false
-                playbackThread = Thread { runPlaybackLoop() }.apply {
-                    name = "AudioPlaybackThread"
+                val myGeneration = generation.get()
+                playbackThread = Thread { runPlaybackLoop(myGeneration) }.apply {
+                    name = "AudioPlayback-seek-gen$myGeneration"
                     isDaemon = true
                     start()
                 }
             }
             android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
-                isPlayingFlag = false
-                audioTrack?.pause()
-            }, 300)
+                if (!isPlayingFlag) {
+                    audioTrack?.pause()
+                } else {
+                    isPlayingFlag = false
+                    audioTrack?.pause()
+                }
+            }, 250)
         }
 
         Log.d(TAG, "⏩ Seek: ${positionMs}ms")
     }
 
     fun isPlaying(): Boolean = isPlayingFlag
-
     fun getCurrentPositionMs(): Int = (currentPositionUs / 1000L).toInt()
-
     fun getDurationMs(): Int = (durationUs / 1000L).toInt()
-
     fun getAudioSessionId(): Int =
         try { audioTrack?.audioSessionId ?: 0 } catch (e: Exception) { 0 }
-
-    // ========== EFEITOS ==========
 
     fun setHaasDelay(delayMs: Int) {
         haasDelayMs = delayMs.coerceIn(0, 50)
         haasProcessor?.apply {
-            if (haasDelayMs == 0) {
-                setEnabled(false)
-            } else {
-                setDelayMs(haasDelayMs)
-                setEnabled(true)
-            }
+            if (haasDelayMs == 0) setEnabled(false)
+            else { setDelayMs(haasDelayMs); setEnabled(true) }
         }
         Log.d(TAG, "🎧 Haas: ${haasDelayMs}ms")
     }
@@ -329,9 +338,7 @@ class StreamingAudioPlayer {
                 val params = audioTrack?.playbackParams?.also { it.pitch = factor }
                 if (params != null) audioTrack?.playbackParams = params
             }
-        } catch (e: Exception) {
-            Log.e(TAG, "❌ Pitch: ${e.message}")
-        }
+        } catch (e: Exception) { Log.e(TAG, "❌ Pitch: ${e.message}") }
     }
 
     fun setSpeed(speed: Float) {
@@ -341,13 +348,11 @@ class StreamingAudioPlayer {
                 val params = audioTrack?.playbackParams?.also { it.speed = speedFactor }
                 if (params != null) audioTrack?.playbackParams = params
             }
-        } catch (e: Exception) {
-            Log.e(TAG, "❌ Speed: ${e.message}")
-        }
+        } catch (e: Exception) { Log.e(TAG, "❌ Speed: ${e.message}") }
     }
 
     fun setReverse(enabled: Boolean) {
-        Log.w(TAG, "Reverse requer decodificação invertida — ainda não implementado")
+        Log.w(TAG, "Reverse requer decodificação invertida — não implementado")
     }
 
     private fun findAudioTrack(extractor: MediaExtractor): Int {
@@ -356,5 +361,11 @@ class StreamingAudioPlayer {
             if (mime.startsWith("audio/")) return i
         }
         return -1
+    }
+
+    private fun postError(msg: String) {
+        android.os.Handler(android.os.Looper.getMainLooper()).post {
+            onError?.invoke(msg)
+        }
     }
 }
