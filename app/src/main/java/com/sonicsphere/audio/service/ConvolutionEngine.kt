@@ -261,6 +261,7 @@ class ConvolutionEngine(private val sampleRate: Int) {
             }
             // FFT da partição (armazenada como real/imag intercalado)
             fftReal(partition)
+            partition
         }
     }
 
