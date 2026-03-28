@@ -182,7 +182,7 @@
                     <TextView
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:text="Áudio Binaural 3D"
+                        android:text="Áudio 3D (Binaural HRTF)"
                         android:textColor="@color/white"
                         android:textSize="18sp"
                         android:textStyle="bold" />
