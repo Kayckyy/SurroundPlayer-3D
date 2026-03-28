@@ -307,70 +307,79 @@ class MusicService : Service() {
     }
 
     // EQUALIZER
-    fun isEqualizerEnabled(): Boolean = isEqualizerEnabled
+        // ========== EQUALIZER (pipeline próprio) ==========
+
+    fun isEqualizerEnabled(): Boolean =
+        player?.equalizerProcessor?.isEnabled() ?: false
 
     fun setEqualizerEnabled(enabled: Boolean) {
-        isEqualizerEnabled = enabled
-        equalizer?.enabled = enabled
-        saveAudioEffectsSettings()
+        player?.equalizerProcessor?.setEnabled(enabled)
+        prefs.edit().putBoolean(KEY_EQUALIZER_ENABLED, enabled).apply()
         Log.d("MusicService", "🎚️ Equalizer ${if (enabled) "ativado" else "desativado"}")
     }
 
-    fun getEqualizerNumberOfBands(): Short? = equalizer?.numberOfBands
+    fun getEqualizerNumberOfBands(): Short =
+        EqualizerProcessor.BAND_COUNT.toShort()
 
-    fun getEqualizerBandLevelRange(): ShortArray? = equalizer?.bandLevelRange
+    // Retorna range em centibels para manter compatibilidade com o SettingsFragment
+    fun getEqualizerBandLevelRange(): ShortArray =
+        shortArrayOf(-1500, 1500) // -15dB a +15dB em centibels
 
-    fun getEqualizerCenterFreq(band: Short): Int? = equalizer?.getCenterFreq(band)
+    fun getEqualizerCenterFreq(band: Short): Int {
+        val idx = band.toInt()
+        if (idx !in 0 until EqualizerProcessor.BAND_COUNT) return 0
+        return EqualizerProcessor.BAND_FREQUENCIES[idx] * 1000 // em milliHz igual API Android
+    }
 
-    fun getEqualizerBandLevel(band: Short): Short? = equalizer?.getBandLevel(band)
+    fun getEqualizerBandLevel(band: Short): Short {
+        val db = player?.equalizerProcessor?.getBandGainDb(band.toInt()) ?: 0f
+        return (db * 100).toInt().toShort() // converte dB para centibels
+    }
 
     fun setEqualizerBandLevel(band: Short, level: Short) {
-        equalizer?.setBandLevel(band, level)
-        saveAudioEffectsSettings()
+        val db = level.toFloat() / 100f // converte centibels para dB
+        player?.equalizerProcessor?.setBandGainDb(band.toInt(), db)
+        prefs.edit().putInt("eq_band_${band}", level.toInt()).apply()
     }
 
-    fun getEqualizerPresetNames(): Array<String>? {
-        return try {
-            val count = equalizer?.numberOfPresets ?: return null
-            Array(count.toInt()) { index ->
-                equalizer?.getPresetName(index.toShort()) ?: "Preset $index"
-            }
-        } catch (e: Exception) {
-            null
-        }
-    }
+    // Presets não são suportados no processador próprio
+    fun getEqualizerPresetNames(): Array<String>? = null
+    fun setEqualizerPreset(preset: Short) {}
 
-    fun setEqualizerPreset(preset: Short) {
-        try {
-            equalizer?.usePreset(preset)
-            prefs.edit().putInt("equalizer_preset", preset.toInt()).apply()
-            Log.d("MusicService", "🎚️ Preset aplicado: $preset")
-        } catch (e: Exception) {
-            Log.e("MusicService", "❌ Erro ao aplicar preset", e)
-        }
-    }
+    // ========== BASS BOOST (pipeline próprio) ==========
 
-    // BASS BOOST
-    fun isBassBoostEnabled(): Boolean = isBassBoostEnabled
+    fun isBassBoostEnabled(): Boolean =
+        player?.bassBoostProcessor?.isEnabled() ?: false
 
     fun setBassBoostEnabled(enabled: Boolean) {
-        isBassBoostEnabled = enabled
-        bassBoost?.enabled = enabled
-        saveAudioEffectsSettings()
+        player?.bassBoostProcessor?.setEnabled(enabled)
+        prefs.edit().putBoolean(KEY_BASS_BOOST_ENABLED, enabled).apply()
         Log.d("MusicService", "🔊 Bass Boost ${if (enabled) "ativado" else "desativado"}")
     }
 
-    fun getBassBoostStrength(): Short? = bassBoost?.roundedStrength
-
-    fun setBassBoostStrength(strength: Short) {
-        try {
-            bassBoost?.setStrength(strength)
-            saveAudioEffectsSettings()
-            Log.d("MusicService", "🔊 Bass Boost: $strength")
-        } catch (e: Exception) {
-            Log.e("MusicService", "❌ Erro ao definir Bass Boost", e)
-        }
+    // Retorna ganho atual em centibels (compatibilidade com SettingsFragment)
+    fun getBassBoostStrength(): Short {
+        val db = player?.bassBoostProcessor?.gainDb ?: 0f
+        return (db * 100).toInt().toShort()
     }
+
+    // strength em centibels (0-1500 = 0-15dB)
+    fun setBassBoostStrength(strength: Short) {
+        val db = strength.toFloat() / 100f
+        player?.bassBoostProcessor?.setGainDb(db)
+        prefs.edit().putInt(KEY_BASS_BOOST_STRENGTH, strength.toInt()).apply()
+        Log.d("MusicService", "🔊 Bass Boost: ${db}dB")
+    }
+
+    fun getBassBoostCutoffHz(): Float =
+        player?.bassBoostProcessor?.cutoffHz ?: BassBoostProcessor.DEFAULT_CUTOFF_HZ
+
+    fun setBassBoostCutoffHz(hz: Float) {
+        player?.bassBoostProcessor?.setCutoffHz(hz)
+        prefs.edit().putFloat("bass_boost_cutoff_hz", hz).apply()
+        Log.d("MusicService", "🔊 Bass Boost cutoff: ${hz}Hz")
+    }
+
 
     // ========== CONTROLES EXTERNOS ==========
 
