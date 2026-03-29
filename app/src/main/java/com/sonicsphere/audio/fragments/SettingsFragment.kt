@@ -142,6 +142,7 @@ binding.seekBarBinauralPostGain.setOnSeekBarChangeListener(seekListener { p ->
 })
 
 binding.seekBarBinauralPostGain.progress = 24  // +12dB padrão
+    }
 
     private fun pickIrFile(slot: ConvolutionEngine.IrSlot) {
         val ctx = requireContext()
