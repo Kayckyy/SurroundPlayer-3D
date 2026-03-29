@@ -389,6 +389,18 @@ class StreamingAudioPlayer {
         Log.w(TAG, "Reverse requer decodificação invertida — não implementado")
     }
 
+    private fun softLimit(buffer: ShortArray) {
+    for (i in buffer.indices) {
+        val s = buffer[i].toFloat() / 32768f
+        val limited = if (s > 0.707f)
+            0.707f + (s - 0.707f) / (1f + ((s - 0.707f) / 0.237f).let { it * it })
+        else if (s < -0.707f)
+            -0.707f + (s + 0.707f) / (1f + ((s + 0.707f) / 0.237f).let { it * it })
+        else s
+        buffer[i] = (limited * 32767f).toInt().toShort()
+    }
+    }
+
     private fun findAudioTrack(extractor: MediaExtractor): Int {
         for (i in 0 until extractor.trackCount) {
             val mime = extractor.getTrackFormat(i).getString(MediaFormat.KEY_MIME) ?: continue
