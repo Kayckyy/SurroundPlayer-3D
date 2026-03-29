@@ -65,7 +65,7 @@ class ConvolutionEngine(private val sampleRate: Int) {
     private var xtalkLpfL = 0f
     private var xtalkLpfR = 0f
     private val xtalkLpfCoeff: Float = run {
-    val rc = 1.0 / (2.0 * Math.PI * 2200.0)
+    val rc = 1.0 / (2.0 * Math.PI * 2800.0)
     val dt = 1.0 / 44100.0
     (dt / (rc + dt)).toFloat()
     
