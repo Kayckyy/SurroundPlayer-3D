@@ -219,9 +219,11 @@ class MusicService : Service() {
     fun isBinauralEnabled(): Boolean = convolutionEngine?.enabled ?: false
 
     fun setBinauralEnabled(enabled: Boolean) {
-        convolutionEngine?.enabled = enabled
-        prefs.edit().putBoolean("binaural_enabled", enabled).apply()
-        Log.d("MusicService", "🎧 Binaural ${if (enabled) "ON" else "OFF"}")
+      convolutionEngine?.enabled = enabled
+      // Reverb segue o binaural com valores fixos
+      player?.reverbProcessor?.enabled = enabled
+      prefs.edit().putBoolean("binaural_enabled", enabled).apply()
+      Log.d("MusicService", "Binaural ${if (enabled) "ON" else "OFF"}")
     }
 
     fun getConvolutionEngine(): ConvolutionEngine? = convolutionEngine
@@ -286,31 +288,11 @@ class MusicService : Service() {
 
     fun isReverbEnabled(): Boolean = player?.reverbProcessor?.enabled ?: false
 
-    fun setReverbEnabled(enabled: Boolean) {
-        player?.reverbProcessor?.enabled = enabled
-        prefs.edit().putBoolean("reverb_enabled", enabled).apply()
-    }
+    fun getReverbRoomSize(): Float = prefs.getFloat("reverb_room_size", 0.1f)
 
-    fun setReverbRoomSize(size: Float) {
-        player?.reverbProcessor?.roomSize = size
-        prefs.edit().putFloat("reverb_room_size", size).apply()
-    }
+    fun getReverbWet(): Float = prefs.getFloat("reverb_wet", 0.07f)
 
-    fun getReverbRoomSize(): Float = prefs.getFloat("reverb_room_size", 0.5f)
-
-    fun setReverbWet(wet: Float) {
-        player?.reverbProcessor?.wet = wet
-        prefs.edit().putFloat("reverb_wet", wet).apply()
-    }
-
-    fun getReverbWet(): Float = prefs.getFloat("reverb_wet", 0.25f)
-
-    fun setReverbDamping(damping: Float) {
-        player?.reverbProcessor?.damping = damping
-        prefs.edit().putFloat("reverb_damping", damping).apply()
-    }
-
-    fun getReverbDamping(): Float = prefs.getFloat("reverb_damping", 0.4f)
+    fun getReverbDamping(): Float = prefs.getFloat("reverb_damping", 0.7f)
 
     // ========== AUDIO EFFECTS (pipeline próprio) ==========
 
