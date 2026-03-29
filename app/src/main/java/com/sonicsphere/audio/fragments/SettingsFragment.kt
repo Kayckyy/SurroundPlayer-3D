@@ -199,38 +199,7 @@ class SettingsFragment : Fragment() {
         setIrStatus(ConvolutionEngine.IrSlot.RIGHT,
             if (engine.isSlotLoaded(ConvolutionEngine.IrSlot.RIGHT)) "Carregado" else "Padrao (asset)")
     }
-
-    // ========== REVERB ==========
-
-    private fun setupReverb() {
-        binding.switchReverb.setOnCheckedChangeListener { _, isChecked ->
-            getMusicService()?.setReverbEnabled(isChecked)
-            binding.reverbControlsContainer.visibility =
-                if (isChecked) View.VISIBLE else View.GONE
-        }
-
-        binding.seekBarReverbRoomSize.max = 100
-        binding.seekBarReverbRoomSize.setOnSeekBarChangeListener(seekListener { p ->
-            val v = p / 100f
-            getMusicService()?.setReverbRoomSize(v)
-            binding.textReverbRoomSize.text = "$p%"
-        })
-
-        binding.seekBarReverbWet.max = 100
-        binding.seekBarReverbWet.setOnSeekBarChangeListener(seekListener { p ->
-            val v = p / 100f
-            getMusicService()?.setReverbWet(v)
-            binding.textReverbWet.text = "$p%"
-        })
-
-        binding.seekBarReverbDamping.max = 100
-        binding.seekBarReverbDamping.setOnSeekBarChangeListener(seekListener { p ->
-            val v = p / 100f
-            getMusicService()?.setReverbDamping(v)
-            binding.textReverbDamping.text = "$p%"
-        })
-    }
-
+    
     // ========== HAAS ==========
 
     private fun setupHaas() {
@@ -275,24 +244,6 @@ class SettingsFragment : Fragment() {
         val gainProg = (gainDb + 12f).toInt().coerceIn(0, 24)
         binding.seekBarBinauralPostGain.progress = gainProg
         binding.textBinauralPostGain.text = "${if (gainDb >= 0) "+" else ""}${gainDb.toInt()} dB"
-
-        // Reverb
-        val reverbOn = s.isReverbEnabled()
-        binding.switchReverb.isChecked = reverbOn
-        binding.reverbControlsContainer.visibility =
-            if (reverbOn) View.VISIBLE else View.GONE
-
-        val roomPct = (s.getReverbRoomSize() * 100).toInt()
-        binding.seekBarReverbRoomSize.progress = roomPct
-        binding.textReverbRoomSize.text = "$roomPct%"
-
-        val wetPct = (s.getReverbWet() * 100).toInt()
-        binding.seekBarReverbWet.progress = wetPct
-        binding.textReverbWet.text = "$wetPct%"
-
-        val dampPct = (s.getReverbDamping() * 100).toInt()
-        binding.seekBarReverbDamping.progress = dampPct
-        binding.textReverbDamping.text = "$dampPct%"
 
         // Haas
         when (s.getHaasDelay()) {
