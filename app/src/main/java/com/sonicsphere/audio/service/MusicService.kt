@@ -299,10 +299,9 @@ class MusicService : Service() {
     fun setReverbEnabled(enabled: Boolean) {
     player?.reverbProcessor?.enabled = enabled
     prefs.edit().putBoolean("reverb_enabled", enabled).apply()
-    
     }
 
-    fun isReverbEnabled(): Boolean = player?.reverbProcessor?.enabled ?: false
+    fun isReverbEnabled(): Boolean = prefs.getBoolean("reverb_enabled", false)
 
     fun getReverbRoomSize(): Float = prefs.getFloat("reverb_room_size", 0.25f)
 
@@ -731,6 +730,7 @@ class MusicService : Service() {
                     setHaasDelay(savedHaasDelay)
                     setPitch(savedPitch)
                     setSpeed(savedSpeed)
+                    player?.reverbProcessor?.enabled = prefs.getBoolean("reverb_enabled", false)
 
                     // Restaura estado do reverb
                     /*
