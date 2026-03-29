@@ -131,7 +131,8 @@ class SettingsFragment : Fragment() {
 
         binding.btnIrLeftClear.setOnClickListener  { resetIrToDefault(ConvolutionEngine.IrSlot.LEFT) }
         binding.btnIrRightClear.setOnClickListener { resetIrToDefault(ConvolutionEngine.IrSlot.RIGHT) }
-
+        binding.switchReverb.setOnCheckedChangeListener { _, isChecked -> getMusicService()?.setReverbEnabled(isChecked)
+        }
         // Post-gain: range -12dB a +12dB, seekbar 0–24, centro=12
         binding.seekBarBinauralPostGain.max = 24
         binding.seekBarBinauralPostGain.setOnSeekBarChangeListener(seekListener { p ->
@@ -243,7 +244,7 @@ class SettingsFragment : Fragment() {
         val gainProg = (gainDb + 12f).toInt().coerceIn(0, 24)
         binding.seekBarBinauralPostGain.progress = gainProg
         binding.textBinauralPostGain.text = "${if (gainDb >= 0) "+" else ""}${gainDb.toInt()} dB"
-
+        binding.switchReverb.isChecked = s.isReverbEnabled()
         // Haas
         when (s.getHaasDelay()) {
             10   -> binding.radioHaasShort.isChecked  = true
