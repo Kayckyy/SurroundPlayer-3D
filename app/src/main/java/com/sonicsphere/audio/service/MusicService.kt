@@ -304,9 +304,9 @@ class MusicService : Service() {
 
     fun isReverbEnabled(): Boolean = player?.reverbProcessor?.enabled ?: false
 
-    fun getReverbRoomSize(): Float = prefs.getFloat("reverb_room_size", 0.1f)
+    fun getReverbRoomSize(): Float = prefs.getFloat("reverb_room_size", 0.25f)
 
-    fun getReverbWet(): Float = prefs.getFloat("reverb_wet", 0.07f)
+    fun getReverbWet(): Float = prefs.getFloat("reverb_wet", 0.18f)
 
     fun getReverbDamping(): Float = prefs.getFloat("reverb_damping", 0.7f)
 
