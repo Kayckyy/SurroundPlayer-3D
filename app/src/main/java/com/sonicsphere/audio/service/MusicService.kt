@@ -296,6 +296,14 @@ class MusicService : Service() {
 
     // ========== REVERB ==========
 
+    fun setReverbEnabled(enabled: Boolean) {
+    player?.reverbProcessor?.enabled = enabled
+    prefs.edit().putBoolean("reverb_enabled", enabled).apply()
+    
+    }
+
+    fun isReverbEnabled(): Boolean = player?.reverbProcessor?.enabled ?: false
+
     fun isReverbEnabled(): Boolean = player?.reverbProcessor?.enabled ?: false
 
     fun getReverbRoomSize(): Float = prefs.getFloat("reverb_room_size", 0.1f)
