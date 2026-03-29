@@ -2,26 +2,19 @@ package com.sonicsphere.audio.service
 
 /**
  * Reverb sintético de Schroeder — 4 filtros comb paralelos + 2 allpass em série.
- * Estéreo real: cada canal processa seu próprio sinal independentemente.
- *
- * roomSize  0.0–1.0  (tamanho da sala)
- * wet       0.0–1.0  (mix seco/molhado)
- * damping   0.0–1.0  (absorção de altas frequências)
+ * Valores fixos otimizados para reflexão de sala pequena.
+ * Low cut em 200Hz na cauda do reverb.
  */
 class ReverbProcessor(private val sampleRate: Int) {
 
-    private val COMB_BASE_MS = floatArrayOf(29.7f, 37.1f, 41.1f, 43.7f)
-    private val ALLPASS_MS   = floatArrayOf(5.0f, 1.7f)
+    private val COMB_BASE_MS   = floatArrayOf(29.7f, 37.1f, 41.1f, 43.7f)
+    private val ALLPASS_MS     = floatArrayOf(5.0f, 1.7f)
     private val COMB_GAIN_BASE = 0.84f
 
-    var roomSize: Float = 0.5f
-        set(v) { field = v.coerceIn(0f, 1f); rebuildFilters() }
-
-    var wet: Float = 0.25f
-        set(v) { field = v.coerceIn(0f, 1f) }
-
-    var damping: Float = 0.4f
-        set(v) { field = v.coerceIn(0f, 1f); rebuildFilters() }
+    // Valores fixos de sala
+    private val roomSize = 0.1f
+    private val wet      = 0.07f
+    private val damping  = 0.8f
 
     var enabled = false
 
@@ -32,17 +25,26 @@ class ReverbProcessor(private val sampleRate: Int) {
 
     private data class AllpassState(val buf: FloatArray) { var idx = 0 }
 
-    private var combsL  = Array(4) { CombState(FloatArray(1)) }
-    private var combsR  = Array(4) { CombState(FloatArray(1)) }
-    private var apL     = Array(2) { AllpassState(FloatArray(1)) }
-    private var apR     = Array(2) { AllpassState(FloatArray(1)) }
+    private var combsL = Array(4) { CombState(FloatArray(1)) }
+    private var combsR = Array(4) { CombState(FloatArray(1)) }
+    private var apL    = Array(2) { AllpassState(FloatArray(1)) }
+    private var apR    = Array(2) { AllpassState(FloatArray(1)) }
     private var combGains = FloatArray(4) { COMB_GAIN_BASE }
 
-    init { rebuildFilters() }
+    // Low cut 200Hz (filtro passa-alta de 1a ordem)
+    private var lcL = 0f
+    private var lcR = 0f
+    private val lcCoeff: Float = run {
+        val rc = 1.0 / (2.0 * Math.PI * 200.0)
+        val dt = 1.0 / sampleRate
+        (rc / (rc + dt)).toFloat()
+    }
+
+    init { buildFilters() }
 
     private fun msToSamples(ms: Float) = (ms * sampleRate / 1000f).toInt().coerceAtLeast(1)
 
-    private fun rebuildFilters() {
+    private fun buildFilters() {
         val scale = 0.5f + roomSize * 1.5f
         val gain  = (COMB_GAIN_BASE + roomSize * 0.12f).coerceAtMost(0.97f)
         combGains = FloatArray(4) { gain }
@@ -58,25 +60,29 @@ class ReverbProcessor(private val sampleRate: Int) {
     fun process(buffer: ShortArray) {
         if (!enabled || buffer.isEmpty()) return
         val frames = buffer.size / 2
-        val dampF  = damping
         val dry    = 1f - wet
 
         for (f in 0 until frames) {
             val dryL = buffer[f * 2].toFloat()     / 32768f
             val dryR = buffer[f * 2 + 1].toFloat() / 32768f
 
-            // Estéreo real: cada canal alimenta seus próprios combs
             var revL = 0f
             var revR = 0f
             for (c in 0 until 4) {
-                revL += processComb(combsL[c], dryL, combGains[c], dampF)
-                revR += processComb(combsR[c], dryR, combGains[c], dampF)
+                revL += processComb(combsL[c], dryL, combGains[c], damping)
+                revR += processComb(combsR[c], dryR, combGains[c], damping)
             }
 
             revL = processAllpass(apL[0], revL)
             revL = processAllpass(apL[1], revL)
             revR = processAllpass(apR[0], revR)
             revR = processAllpass(apR[1], revR)
+
+            // Low cut 200Hz — remove graves da cauda do reverb
+            lcL = lcCoeff * (lcL + revL - lcL)
+            lcR = lcCoeff * (lcR + revR - lcR)
+            revL -= lcL
+            revR -= lcR
 
             val outL = (dryL * dry + revL * wet).coerceIn(-1f, 1f)
             val outR = (dryR * dry + revR * wet).coerceIn(-1f, 1f)
@@ -106,5 +112,7 @@ class ReverbProcessor(private val sampleRate: Int) {
         combsR.forEach { it.buf.fill(0f); it.idx = 0; it.lpf = 0f }
         apL.forEach    { it.buf.fill(0f); it.idx = 0 }
         apR.forEach    { it.buf.fill(0f); it.idx = 0 }
+        lcL = 0f
+        lcR = 0f
     }
 }
