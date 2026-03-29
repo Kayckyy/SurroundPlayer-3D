@@ -9,13 +9,18 @@ import kotlin.math.pow
 import kotlin.math.sin
 
 /**
- * Motor de convolução binaural — slots LEFT e RIGHT.
- * Algoritmo: Overlap-Add com FFT complexa (Cooley-Tukey radix-2).
+ * Motor de convolução binaural com cross-talk — 4 IRs.
  *
- * NORMALIZAÇÃO: usa energia RMS do IR, não pico.
- * Um IR normalizado por pico ainda pode ter energia total >> 1.0,
- * causando clipping após convolução. A normalização por RMS garante
- * que a energia da saída seja proporcional à entrada.
+ * Modelo igual ao OmniAudio Python (process_stereo_fixed):
+ *   out_L = conv(inL, IR_LL) + conv(inR, IR_LR) * XTALK_GAIN
+ *   out_R = conv(inL, IR_RL) * XTALK_GAIN + conv(inR, IR_RR)
+ *
+ * Os 4 IRs vêm dos 2 WAVs estéreo existentes:
+ *   left.wav  → canal L = IR_LL, canal R = IR_RL
+ *   right.wav → canal L = IR_LR, canal R = IR_RR
+ *
+ * Algoritmo: Overlap-Add com FFT complexa (Cooley-Tukey radix-2).
+ * Normalização: L1 norm por IR.
  */
 class ConvolutionEngine(private val sampleRate: Int) {
 
@@ -24,19 +29,34 @@ class ConvolutionEngine(private val sampleRate: Int) {
         const val MAX_IR_SAMPLES = 44100
         private const val BLOCK_SIZE = 256
         private const val FFT_SIZE   = 1024  // >= BLOCK_SIZE + IR_len - 1
+
+        // Atenuação do cross-talk — igual ao Python (0.6x)
+        private const val XTALK_GAIN = 0.6f
     }
 
     enum class IrSlot { LEFT, RIGHT }
 
-    private val irFreq      = mutableMapOf<IrSlot, FloatArray>()
+    // 4 IRs no domínio da frequência
+    // LL = ouvido esquerdo ← fonte esquerda (direto)
+    // RL = ouvido direito  ← fonte esquerda (cross-talk)
+    // LR = ouvido esquerdo ← fonte direita  (cross-talk)
+    // RR = ouvido direito  ← fonte direita  (direto)
+    private var irLL: FloatArray? = null
+    private var irRL: FloatArray? = null
+    private var irLR: FloatArray? = null
+    private var irRR: FloatArray? = null
+
     private val slotsLoaded = mutableSetOf<IrSlot>()
 
     private val inL   = FloatArray(FFT_SIZE)
     private val inR   = FloatArray(FFT_SIZE)
     private var inPos = 0
 
-    private val olL = FloatArray(FFT_SIZE)
-    private val olR = FloatArray(FFT_SIZE)
+    // Buffers de overlap separados para cada contribuição
+    private val olLL = FloatArray(FFT_SIZE)
+    private val olRL = FloatArray(FFT_SIZE)
+    private val olLR = FloatArray(FFT_SIZE)
+    private val olRR = FloatArray(FFT_SIZE)
 
     private val outBufL = FloatArray(BLOCK_SIZE)
     private val outBufR = FloatArray(BLOCK_SIZE)
@@ -44,44 +64,49 @@ class ConvolutionEngine(private val sampleRate: Int) {
     private var outAvail = 0
 
     @Volatile var enabled = false
-
-    /** Gain de saída linear. 1.0 = sem alteração. Use setPostGainDb() para ajustar em dB. */
     @Volatile var postGain = 1.0f
 
-    fun setPostGainDb(db: Float) {
-        postGain = 10f.pow(db / 20f)
-    }
+    fun setPostGainDb(db: Float) { postGain = 10f.pow(db / 20f) }
 
     fun isSlotLoaded(slot: IrSlot) = slot in slotsLoaded
     fun hasPrincipalIrs() = IrSlot.LEFT in slotsLoaded && IrSlot.RIGHT in slotsLoaded
 
     // ========== CARREGAMENTO ==========
 
+    /**
+     * Carrega o par de IRs de um WAV estéreo.
+     * LEFT:  leftChannel = IR_LL, rightChannel = IR_RL
+     * RIGHT: leftChannel = IR_LR, rightChannel = IR_RR
+     */
     fun loadIr(slot: IrSlot, leftChannel: FloatArray, rightChannel: FloatArray) {
-        val src = if (slot == IrSlot.LEFT) leftChannel else rightChannel
-        val len = min(src.size, MAX_IR_SAMPLES)
-        val ir = src.copyOf(len)
+        val lenL = min(leftChannel.size,  MAX_IR_SAMPLES)
+        val lenR = min(rightChannel.size, MAX_IR_SAMPLES)
 
-        // Normalização pela soma L1 (soma dos valores absolutos).
-        // A convolução de x[n] com h[n] tem energia máxima = |x|_max * sum(|h[n]|).
-        // Dividindo h pelo seu L1 norm, a saída nunca ultrapassa a amplitude de entrada,
-        // independente do conteúdo do IR.
-        val l1 = ir.sumOf { abs(it).toDouble() }.toFloat()
-        if (l1 > 1e-6f) for (i in ir.indices) ir[i] /= l1
+        val irA = leftChannel.copyOf(lenL)
+        val irB = rightChannel.copyOf(lenR)
 
-        // Transforma para domínio da frequência
-        val freq = FloatArray(FFT_SIZE * 2)
-        for (i in ir.indices) freq[i * 2] = ir[i]
-        fft(freq, inverse = false)
-        irFreq[slot] = freq
+        // Normalização L1 independente por canal
+        normalize(irA)
+        normalize(irB)
+
+        val freqA = toFreq(irA)
+        val freqB = toFreq(irB)
+
+        when (slot) {
+            IrSlot.LEFT  -> { irLL = freqA; irRL = freqB }
+            IrSlot.RIGHT -> { irLR = freqA; irRR = freqB }
+        }
 
         slotsLoaded.add(slot)
         reset()
-        Log.d(TAG, "IR carregado: $slot | $len samples | L1=$l1")
+        Log.d(TAG, "IR carregado: $slot | ${lenL}/${lenR} samples")
     }
 
     fun unloadIr(slot: IrSlot) {
-        irFreq.remove(slot)
+        when (slot) {
+            IrSlot.LEFT  -> { irLL = null; irRL = null }
+            IrSlot.RIGHT -> { irLR = null; irRR = null }
+        }
         slotsLoaded.remove(slot)
         reset()
         Log.d(TAG, "IR removido: $slot")
@@ -104,7 +129,6 @@ class ConvolutionEngine(private val sampleRate: Int) {
             }
 
             if (outAvail > 0) {
-                // Limiter hard antes de converter — nunca clipa
                 buffer[frame * 2]     = (outBufL[outPos].coerceIn(-0.95f, 0.95f) * 32767f).toInt().toShort()
                 buffer[frame * 2 + 1] = (outBufR[outPos].coerceIn(-0.95f, 0.95f) * 32767f).toInt().toShort()
                 outPos++
@@ -114,32 +138,64 @@ class ConvolutionEngine(private val sampleRate: Int) {
     }
 
     private fun processBlock() {
-        val fL = FloatArray(FFT_SIZE * 2).also { for (i in 0 until BLOCK_SIZE) it[i * 2] = inL[i] }
-        val fR = FloatArray(FFT_SIZE * 2).also { for (i in 0 until BLOCK_SIZE) it[i * 2] = inR[i] }
+        // FFT dos blocos de entrada
+        val fL = toComplexBlock(inL)
+        val fR = toComplexBlock(inR)
         fft(fL, inverse = false)
         fft(fR, inverse = false)
 
-        val resL = FloatArray(FFT_SIZE * 2)
-        val resR = FloatArray(FFT_SIZE * 2)
-        irFreq[IrSlot.LEFT]?.let  { complexMul(fL, it, resL) }
-        irFreq[IrSlot.RIGHT]?.let { complexMul(fR, it, resR) }
+        // 4 convoluções independentes
+        val convLL = FloatArray(FFT_SIZE * 2).also { irLL?.let { ir -> complexMul(fL, ir, it) } }
+        val convRL = FloatArray(FFT_SIZE * 2).also { irRL?.let { ir -> complexMul(fL, ir, it) } }
+        val convLR = FloatArray(FFT_SIZE * 2).also { irLR?.let { ir -> complexMul(fR, ir, it) } }
+        val convRR = FloatArray(FFT_SIZE * 2).also { irRR?.let { ir -> complexMul(fR, ir, it) } }
 
-        fft(resL, inverse = true)
-        fft(resR, inverse = true)
+        // IFFT de cada contribuição
+        fft(convLL, inverse = true)
+        fft(convRL, inverse = true)
+        fft(convLR, inverse = true)
+        fft(convRR, inverse = true)
 
-        // Overlap-Add com post-gain
+        // Overlap-Add + mix com cross-talk:
+        // outL = conv(inL, IR_LL) + conv(inR, IR_LR) * XTALK
+        // outR = conv(inL, IR_RL) * XTALK + conv(inR, IR_RR)
         val g = postGain
         for (i in 0 until BLOCK_SIZE) {
-            outBufL[i] = (resL[i * 2] + olL[i]) * g
-            outBufR[i] = (resR[i * 2] + olR[i]) * g
+            val outL = (convLL[i*2] + olLL[i]) + (convLR[i*2] + olLR[i]) * XTALK_GAIN
+            val outR = (convRL[i*2] + olRL[i]) * XTALK_GAIN + (convRR[i*2] + olRR[i])
+            outBufL[i] = outL * g
+            outBufR[i] = outR * g
         }
+        // Salva tails
         for (i in BLOCK_SIZE until FFT_SIZE) {
-            olL[i - BLOCK_SIZE] = resL[i * 2]
-            olR[i - BLOCK_SIZE] = resR[i * 2]
+            olLL[i - BLOCK_SIZE] = convLL[i*2]
+            olRL[i - BLOCK_SIZE] = convRL[i*2]
+            olLR[i - BLOCK_SIZE] = convLR[i*2]
+            olRR[i - BLOCK_SIZE] = convRR[i*2]
         }
 
         outPos = 0
         outAvail = BLOCK_SIZE
+    }
+
+    // ========== UTILITÁRIOS ==========
+
+    private fun normalize(ir: FloatArray) {
+        val l1 = ir.sumOf { abs(it).toDouble() }.toFloat()
+        if (l1 > 1e-6f) for (i in ir.indices) ir[i] /= l1
+    }
+
+    private fun toFreq(ir: FloatArray): FloatArray {
+        val freq = FloatArray(FFT_SIZE * 2)
+        for (i in ir.indices) freq[i * 2] = ir[i]
+        fft(freq, inverse = false)
+        return freq
+    }
+
+    private fun toComplexBlock(real: FloatArray): FloatArray {
+        val out = FloatArray(FFT_SIZE * 2)
+        for (i in 0 until BLOCK_SIZE) out[i * 2] = real[i]
+        return out
     }
 
     // ========== FFT COMPLEXA (Cooley-Tukey radix-2, in-place) ==========
@@ -194,7 +250,8 @@ class ConvolutionEngine(private val sampleRate: Int) {
 
     fun reset() {
         inL.fill(0f); inR.fill(0f); inPos = 0
-        olL.fill(0f); olR.fill(0f)
+        olLL.fill(0f); olRL.fill(0f)
+        olLR.fill(0f); olRR.fill(0f)
         outBufL.fill(0f); outBufR.fill(0f)
         outPos = 0; outAvail = 0
     }
