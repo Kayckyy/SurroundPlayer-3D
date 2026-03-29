@@ -218,8 +218,8 @@
             <TextView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="Atencao: O Audio 3D reduz naturalmente o volume da musica. Ao desligar essa opcao, reduza o volume do sistema para evitar sustos repentinos ou danos auditivos, ou aumente o post-gain abaixo para igualar ao som original."
-                android:textColor="#B5302D"
+                android:text="O Audio 3D processa o sinal binauralmente. O post-gain abaixo permite ajustar o volume de saida."
+                android:textColor="#CDE038"
                 android:textSize="12sp"
                 android:layout_marginBottom="16dp" />
 
