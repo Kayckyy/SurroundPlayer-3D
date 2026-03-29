@@ -29,6 +29,7 @@ import com.sonicsphere.audio.MainActivity
 import com.sonicsphere.audio.metadata.Music
 import com.sonicsphere.audio.R
 import java.io.File
+import kotlin.math.pow
 
 class MusicService : Service() {
 
@@ -228,7 +229,7 @@ class MusicService : Service() {
     fun getBinauralPostGainDb(): Float = prefs.getFloat("binaural_post_gain_db", 0f)
 
     fun setBinauralPostGainDb(db: Float) {
-        convolutionEngine?.setPostGainDb(db)
+        convolutionEngine?.postGain = 10f.pow(db / 20f)
         prefs.edit().putFloat("binaural_post_gain_db", db).apply()
     }
 
@@ -278,7 +279,7 @@ class MusicService : Service() {
         // 3. Ativa binaural se estava ligado
         if (prefs.getBoolean("binaural_enabled", false)) engine.enabled = true
         val savedGainDb = prefs.getFloat("binaural_post_gain_db", 0f)
-        if (savedGainDb != 0f) engine.setPostGainDb(savedGainDb)
+        if (savedGainDb != 0f) engine.postGain = 10f.pow(savedGainDb / 20f)
     }
 
     // ========== REVERB ==========
