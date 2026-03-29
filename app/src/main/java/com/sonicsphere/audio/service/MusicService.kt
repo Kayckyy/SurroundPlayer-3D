@@ -717,13 +717,14 @@ class MusicService : Service() {
                     setSpeed(savedSpeed)
 
                     // Restaura estado do reverb
+                    /*
                     player?.reverbProcessor?.apply {
                         roomSize = getReverbRoomSize()
                         wet      = getReverbWet()
                         damping  = getReverbDamping()
                         enabled  = prefs.getBoolean("reverb_enabled", false)
                     }
-
+                    */
                     // Carrega IRs (assets padrão + externos salvos) se ainda não carregados
                     val engine = player?.convolutionEngine
                     if (engine != null && !engine.hasPrincipalIrs()) {
