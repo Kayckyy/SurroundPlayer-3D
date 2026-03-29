@@ -23,8 +23,8 @@ object IrLoader {
     private const val MAX_SAMPLES = 44100
 
     private val SLOT_ASSET = mapOf(
-        ConvolutionEngine.IrSlot.LEFT  to "ir/left.wav",
-        ConvolutionEngine.IrSlot.RIGHT to "ir/right.wav",
+        ConvolutionEngine.IrSlot.LEFT  to "left.wav",
+        ConvolutionEngine.IrSlot.RIGHT to "right.wav",
     )
 
     data class WavData(val left: FloatArray, val right: FloatArray, val sampleRate: Int)
