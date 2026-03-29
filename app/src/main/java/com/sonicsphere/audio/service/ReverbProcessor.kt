@@ -11,10 +11,10 @@ class ReverbProcessor(private val sampleRate: Int) {
     private val ALLPASS_MS     = floatArrayOf(5.0f, 1.7f)
     private val COMB_GAIN_BASE = 0.84f
 
-    // Valores fixos de sala
-    private val roomSize = 0.1f
-    private val wet      = 0.07f
-    private val damping  = 0.8f
+    // Valores padrão para áudio 3D (fixos, otimizados)
+    private var roomSize = 0.15f  // um pouco maior que o padrão para 3D
+    private var wet      = 0.12f  // mais presença para imersão 3D
+    private var damping  = 0.75f  // levemente mais amortecido
 
     var enabled = false
 
@@ -41,6 +41,29 @@ class ReverbProcessor(private val sampleRate: Int) {
     }
 
     init { buildFilters() }
+
+    // ========== MÉTODOS PÚBLICOS PARA CONFIGURAÇÃO ==========
+    
+    fun setRoomSize(value: Float) {
+        roomSize = value.coerceIn(0.05f, 0.5f)
+        buildFilters()  // Reconstrói os buffers com o novo tamanho
+    }
+    
+    fun setWetLevel(value: Float) {
+        wet = value.coerceIn(0.0f, 0.3f)
+    }
+    
+    fun setDamping(value: Float) {
+        damping = value.coerceIn(0.5f, 0.95f)
+    }
+    
+    // Configuração rápida para áudio 3D (valores otimizados)
+    fun setFor3DAudio() {
+        roomSize = 0.15f
+        wet = 0.12f
+        damping = 0.75f
+        buildFilters()
+    }
 
     private fun msToSamples(ms: Float) = (ms * sampleRate / 1000f).toInt().coerceAtLeast(1)
 
