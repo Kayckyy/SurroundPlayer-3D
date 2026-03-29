@@ -238,7 +238,7 @@ class MusicService : Service() {
 
     fun getConvolutionEngine(): ConvolutionEngine? = convolutionEngine
 
-    fun getBinauralPostGainDb(): Float = prefs.getFloat("binaural_post_gain_db", 0f)
+    fun getBinauralPostGainDb(): Float = prefs.getFloat("binaural_post_gain_db", 12f)
 
     fun setBinauralPostGainDb(db: Float) {
         convolutionEngine?.postGain = 10f.pow(db / 20f)
