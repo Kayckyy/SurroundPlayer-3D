@@ -135,12 +135,13 @@ class SettingsFragment : Fragment() {
         }
         // Post-gain: range -12dB a +12dB, seekbar 0–24, centro=12
         binding.seekBarBinauralPostGain.max = 24
-        binding.seekBarBinauralPostGain.setOnSeekBarChangeListener(seekListener { p ->
-            val db = p - 12f
-            getMusicService()?.setBinauralPostGainDb(db)
-            binding.textBinauralPostGain.text = "${if (db >= 0) "+" else ""}${db.toInt()} dB"
-        })
-    }
+binding.seekBarBinauralPostGain.setOnSeekBarChangeListener(seekListener { p ->
+    val db = p - 12f
+    getMusicService()?.setBinauralPostGainDb(db)
+    binding.textBinauralPostGain.text = "${if (db >= 0) "+" else ""}${db.toInt()} dB"
+})
+
+binding.seekBarBinauralPostGain.progress = 24  // +12dB padrão
 
     private fun pickIrFile(slot: ConvolutionEngine.IrSlot) {
         val ctx = requireContext()
