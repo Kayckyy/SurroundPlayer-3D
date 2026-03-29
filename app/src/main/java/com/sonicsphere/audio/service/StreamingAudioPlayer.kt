@@ -250,8 +250,7 @@ class StreamingAudioPlayer {
                         convolutionEngine?.process(samples)    // 3. HRTF binaural
                         reverbProcessor?.process(samples)      // 4. Reverb de sala
                         haasProcessor?.process(samples)        // 5. Haas
-                        softLimit(samples)
-
+                        
                         audioTrack?.write(samples, 0, samples.size)
                     }
 
@@ -388,18 +387,6 @@ class StreamingAudioPlayer {
 
     fun setReverse(enabled: Boolean) {
         Log.w(TAG, "Reverse requer decodificação invertida — não implementado")
-    }
-
-    private fun softLimit(buffer: ShortArray) {
-    for (i in buffer.indices) {
-        val s = buffer[i].toFloat() / 32768f
-        val limited = if (s > 0.707f)
-            0.707f + (s - 0.707f) / (1f + ((s - 0.707f) / 0.237f).let { it * it })
-        else if (s < -0.707f)
-            -0.707f + (s + 0.707f) / (1f + ((s + 0.707f) / 0.237f).let { it * it })
-        else s
-        buffer[i] = (limited * 32767f).toInt().toShort()
-    }
     }
 
     private fun findAudioTrack(extractor: MediaExtractor): Int {
