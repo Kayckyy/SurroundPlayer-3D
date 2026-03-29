@@ -34,7 +34,6 @@ class SettingsFragment : Fragment() {
         setupEqualizer()
         setupBassBoost()
         setupBinaural()
-        setupReverb()
         setupHaas()
         startPeriodicUpdate()
     }
