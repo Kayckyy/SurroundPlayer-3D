@@ -215,6 +215,14 @@
                 android:layout_marginTop="4dp"
                 android:layout_marginBottom="16dp" />
 
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Atenção: O Áudio 3D reduz naturalmente o volume da música. Ao desligar essa opção, reduza o volume do sistema para evitar sustos repentinos ou danos auditivos."
+                android:textColor="#B5302D"
+                android:textSize="12sp"
+                android:layout_marginBottom="16dp" />
+
             <!-- Painel de slots (visivel quando switch ON) -->
             <LinearLayout
                 android:id="@+id/binauralSlotsContainer"
