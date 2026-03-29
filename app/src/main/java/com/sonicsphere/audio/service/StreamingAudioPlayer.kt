@@ -250,6 +250,7 @@ class StreamingAudioPlayer {
                         convolutionEngine?.process(samples)    // 3. HRTF binaural
                         reverbProcessor?.process(samples)      // 4. Reverb de sala
                         haasProcessor?.process(samples)        // 5. Haas
+                        softLimit(samples)
 
                         audioTrack?.write(samples, 0, samples.size)
                     }
