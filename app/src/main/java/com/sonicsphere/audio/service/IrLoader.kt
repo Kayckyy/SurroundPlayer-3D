@@ -3,6 +3,7 @@ package com.sonicsphere.audio.service
 import android.content.Context
 import android.util.Log
 import java.io.File
+import java.io.FileInputStream
 import java.io.InputStream
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
@@ -10,6 +11,10 @@ import java.nio.ByteOrder
 /**
  * Carrega WAVs estéreo 44.1kHz no ConvolutionEngine.
  * Prioridade: arquivo externo (files/ir/) > asset embutido (assets/ir/).
+ *
+ * NOTA: Usa FileInputStream diretamente para evitar EACCES em Android 10+.
+ * A pasta getExternalFilesDir() pertence ao app e não precisa de permissão,
+ * mas file.inputStream() pode falhar dependendo do contexto de segurança.
  */
 object IrLoader {
 
@@ -34,10 +39,6 @@ object IrLoader {
             .listFiles { f -> f.extension.lowercase() == "wav" }
             ?.sortedBy { it.name } ?: emptyList()
 
-    /**
-     * Carrega LEFT e RIGHT automaticamente.
-     * Retorna true se ambos os slots principais foram carregados com sucesso.
-     */
     fun loadDefaults(context: Context, engine: ConvolutionEngine): Boolean {
         val externalDir = getIrDirectory(context)
         var allOk = true
@@ -45,9 +46,9 @@ object IrLoader {
         for ((slot, assetPath) in SLOT_ASSET) {
             val externalFile = File(externalDir, "${slot.name.lowercase()}.wav")
             val wav: WavData? = when {
-                externalFile.exists() -> {
+                externalFile.exists() && externalFile.canRead() -> {
                     Log.d(TAG, "IR externo: ${externalFile.name} → $slot")
-                    readWav(externalFile.inputStream())
+                    openFileStream(externalFile)?.use { readWav(it) }
                 }
                 else -> {
                     Log.d(TAG, "IR asset: $assetPath → $slot")
@@ -55,15 +56,10 @@ object IrLoader {
                 }
             }
 
-            if (wav == null) {
-                Log.e(TAG, "Falha ao ler IR para $slot")
-                allOk = false
-                continue
-            }
+            if (wav == null) { Log.e(TAG, "Falha ao ler IR para $slot"); allOk = false; continue }
             if (wav.sampleRate != TARGET_SAMPLE_RATE) {
                 Log.e(TAG, "Sample rate inválido para $slot: ${wav.sampleRate}Hz")
-                allOk = false
-                continue
+                allOk = false; continue
             }
 
             engine.loadIr(slot, wav.left, wav.right)
@@ -72,7 +68,6 @@ object IrLoader {
         return allOk
     }
 
-    /** Carrega um arquivo externo num slot específico. */
     fun loadIntoSlot(
         file: File,
         slot: ConvolutionEngine.IrSlot,
@@ -80,18 +75,56 @@ object IrLoader {
         onComplete: ((success: Boolean, error: String?) -> Unit)? = null
     ) {
         try {
-            val wav = readWav(file.inputStream())
-                ?: return onComplete?.invoke(false, "Falha ao ler WAV") ?: Unit
+            if (!file.exists()) {
+                onComplete?.invoke(false, "Arquivo não encontrado: ${file.name}")
+                return
+            }
+            if (!file.canRead()) {
+                onComplete?.invoke(false, "Sem permissão de leitura: ${file.name}")
+                return
+            }
+
+            val stream = openFileStream(file)
+                ?: return onComplete?.invoke(false, "Não foi possível abrir: ${file.name}") ?: Unit
+
+            val wav = stream.use { readWav(it) }
+                ?: return onComplete?.invoke(false, "Falha ao parsear WAV: ${file.name}") ?: Unit
+
             if (wav.sampleRate != TARGET_SAMPLE_RATE)
-                return onComplete?.invoke(false, "Sample rate: ${wav.sampleRate}Hz (esperado 44100Hz)") ?: Unit
+                return onComplete?.invoke(false,
+                    "Sample rate: ${wav.sampleRate}Hz (esperado 44100Hz)") ?: Unit
+
             engine.loadIr(slot, wav.left, wav.right)
             onComplete?.invoke(true, null)
+            Log.d(TAG, "✅ IR carregado: ${file.name} → $slot")
+
+        } catch (e: SecurityException) {
+            Log.e(TAG, "❌ Permissão negada: ${file.absolutePath}", e)
+            onComplete?.invoke(false, "Permissão negada. Verifique se o arquivo está em " +
+                "Android/data/com.sonicsphere.audio/files/ir/")
         } catch (e: Exception) {
-            onComplete?.invoke(false, e.message)
+            Log.e(TAG, "❌ Erro ao carregar IR: ${file.name}", e)
+            onComplete?.invoke(false, e.message ?: "Erro desconhecido")
         }
     }
 
     // ========== LEITURA ==========
+
+    /**
+     * Abre um arquivo usando FileInputStream diretamente.
+     * Evita o EACCES que ocorre com file.inputStream() em alguns contextos Android 10+.
+     */
+    private fun openFileStream(file: File): InputStream? {
+        return try {
+            FileInputStream(file)
+        } catch (e: SecurityException) {
+            Log.e(TAG, "SecurityException ao abrir ${file.name}: ${e.message}")
+            null
+        } catch (e: Exception) {
+            Log.e(TAG, "Erro ao abrir ${file.name}: ${e.message}")
+            null
+        }
+    }
 
     private fun readWavFromAsset(context: Context, path: String): WavData? {
         return try {
@@ -108,7 +141,7 @@ object IrLoader {
             val buf = ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN)
 
             if (String(ByteArray(4).also { buf.get(it) }) != "RIFF") return null
-            buf.int // file size
+            buf.int
             if (String(ByteArray(4).also { buf.get(it) }) != "WAVE") return null
 
             var audioFormat = 0; var numChannels = 0
@@ -116,13 +149,13 @@ object IrLoader {
 
             while (buf.remaining() >= 8) {
                 val id   = String(ByteArray(4).also { buf.get(it) })
-                val size = buf.int  // pode ser negativo para chunks >2GB — irrelevante aqui
+                val size = buf.int
                 when (id) {
                     "fmt " -> {
                         audioFormat   = buf.short.toInt() and 0xFFFF
                         numChannels   = buf.short.toInt() and 0xFFFF
                         sampleRate    = buf.int
-                        buf.int; buf.short  // byteRate, blockAlign
+                        buf.int; buf.short
                         bitsPerSample = buf.short.toInt() and 0xFFFF
                         val extra = size - 16
                         if (extra > 0 && buf.remaining() >= extra)
