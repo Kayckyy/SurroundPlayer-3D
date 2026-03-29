@@ -132,6 +132,14 @@ class SettingsFragment : Fragment() {
 
         binding.btnIrLeftClear.setOnClickListener  { resetIrToDefault(ConvolutionEngine.IrSlot.LEFT) }
         binding.btnIrRightClear.setOnClickListener { resetIrToDefault(ConvolutionEngine.IrSlot.RIGHT) }
+
+        // Post-gain: range -12dB a +12dB, seekbar 0–24, centro=12
+        binding.seekBarBinauralPostGain.max = 24
+        binding.seekBarBinauralPostGain.setOnSeekBarChangeListener(seekListener { p ->
+            val db = p - 12f
+            getMusicService()?.setBinauralPostGainDb(db)
+            binding.textBinauralPostGain.text = "${if (db >= 0) "+" else ""}${db.toInt()} dB"
+        })
     }
 
     private fun pickIrFile(slot: ConvolutionEngine.IrSlot) {
@@ -165,13 +173,14 @@ class SettingsFragment : Fragment() {
 
     private fun resetIrToDefault(slot: ConvolutionEngine.IrSlot) {
         val engine = getMusicService()?.getConvolutionEngine() ?: return
+        // Captura context antes da thread — requireContext() dentro de Thread causa crash
+        val ctx = context ?: return
         Thread {
-            val ctx = requireContext()
             val wav = IrLoader.readWav(
-                ctx.assets.open("ir/${slot.name.lowercase()}.wav")
+                ctx.assets.open("${slot.name.lowercase()}.wav")
             ) ?: return@Thread
             engine.loadIr(slot, wav.left, wav.right)
-            getMusicService()?.unloadConvolutionIr(slot) // limpa path salvo
+            getMusicService()?.unloadConvolutionIr(slot)
             handler.post { setIrStatus(slot, "Padrao (asset)") }
         }.start()
     }
@@ -261,6 +270,11 @@ class SettingsFragment : Fragment() {
         binding.binauralSlotsContainer.visibility =
             if (s.isBinauralEnabled()) View.VISIBLE else View.GONE
         if (s.isBinauralEnabled()) refreshIrStatus()
+
+        val gainDb = s.getBinauralPostGainDb()
+        val gainProg = (gainDb + 12f).toInt().coerceIn(0, 24)
+        binding.seekBarBinauralPostGain.progress = gainProg
+        binding.textBinauralPostGain.text = "${if (gainDb >= 0) "+" else ""}${gainDb.toInt()} dB"
 
         // Reverb
         val reverbOn = s.isReverbEnabled()
