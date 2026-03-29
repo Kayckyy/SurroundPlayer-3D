@@ -72,7 +72,7 @@ class ConvolutionEngine(private val sampleRate: Int) {
     }
 
     @Volatile var enabled = false
-    @Volatile var postGain = 1.0f
+    @Volatile var postGain = 10f.pow(12f / 20f)  // +12dB por padrão
 
     fun setPostGainDb(db: Float) { postGain = 10f.pow(db / 20f) }
 
