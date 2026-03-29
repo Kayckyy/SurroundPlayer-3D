@@ -31,7 +31,7 @@ class ConvolutionEngine(private val sampleRate: Int) {
         private const val FFT_SIZE   = 1024  // >= BLOCK_SIZE + IR_len - 1
 
         // Atenuação do cross-talk — igual ao Python (0.6x)
-        private const val XTALK_GAIN = 0.6f
+        private const val XTALK_GAIN = 0.3f
     }
 
     enum class IrSlot { LEFT, RIGHT }
@@ -62,6 +62,14 @@ class ConvolutionEngine(private val sampleRate: Int) {
     private val outBufR = FloatArray(BLOCK_SIZE)
     private var outPos   = 0
     private var outAvail = 0
+    private var xtalkLpfL = 0f
+    private var xtalkLpfR = 0f
+    private val xtalkLpfCoeff: Float = run {
+    val rc = 1.0 / (2.0 * Math.PI * 2200.0)
+    val dt = 1.0 / 44100.0
+    (dt / (rc + dt)).toFloat()
+    
+    }
 
     @Volatile var enabled = false
     @Volatile var postGain = 1.0f
@@ -161,8 +169,11 @@ class ConvolutionEngine(private val sampleRate: Int) {
         // outR = conv(inL, IR_RL) * XTALK + conv(inR, IR_RR)
         val g = postGain
         for (i in 0 until BLOCK_SIZE) {
-            val outL = (convLL[i*2] + olLL[i]) + (convLR[i*2] + olLR[i]) * XTALK_GAIN
-            val outR = (convRL[i*2] + olRL[i]) * XTALK_GAIN + (convRR[i*2] + olRR[i])
+            // LPF do cross-talk aplicado por amostra
+            xtalkLpfL += xtalkLpfCoeff * ((convLR[i*2] + olLR[i]) - xtalkLpfL)
+            xtalkLpfR += xtalkLpfCoeff * ((convRL[i*2] + olRL[i]) - xtalkLpfR)
+            val outL = (convLL[i*2] + olLL[i]) + xtalkLpfL * XTALK_GAIN
+            val outR = xtalkLpfR * XTALK_GAIN + (convRR[i*2] + olRR[i])
             outBufL[i] = outL * g
             outBufR[i] = outR * g
         }
@@ -254,5 +265,7 @@ class ConvolutionEngine(private val sampleRate: Int) {
         olLR.fill(0f); olRR.fill(0f)
         outBufL.fill(0f); outBufR.fill(0f)
         outPos = 0; outAvail = 0
+        xtalkLpfL = 0f
+        xtalkLpfR = 0f
     }
 }
