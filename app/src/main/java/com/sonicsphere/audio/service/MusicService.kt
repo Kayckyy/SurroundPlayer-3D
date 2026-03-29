@@ -135,6 +135,38 @@ class MusicService : Service() {
         restoreConvolutionIrs()
     }
 
+    private fun restoreConvolutionIrs() {
+    // Restaura os IRs salvos para cada slot
+    val slots = listOf(
+        ConvolutionEngine.IrSlot.FRONT_LEFT to "front_left_ir_path",
+        ConvolutionEngine.IrSlot.FRONT_RIGHT to "front_right_ir_path",
+        ConvolutionEngine.IrSlot.SURROUND_LEFT to "surround_left_ir_path",
+        ConvolutionEngine.IrSlot.SURROUND_RIGHT to "surround_right_ir_path",
+        ConvolutionEngine.IrSlot.CENTER to "center_ir_path",
+        ConvolutionEngine.IrSlot.LFE to "lfe_ir_path"
+    )
+    
+    slots.forEach { (slot, prefKey) ->
+        val irPath = prefs.getString(prefKey, null)
+        if (irPath != null) {
+            val irFile = File(irPath)
+            if (irFile.exists()) {
+                convolutionEngine?.loadIr(slot, irFile) { success, error ->
+                    if (success) {
+                        Log.d("MusicService", "✅ IR restaurado para $slot")
+                    } else {
+                        Log.e("MusicService", "❌ Falha ao restaurar IR para $slot: $error")
+                    }
+                }
+            }
+        }
+    }
+    
+    // Restaura o estado enabled/disabled
+    val binauralEnabled = prefs.getBoolean("binaural_enabled", false)
+    convolutionEngine?.enabled = binauralEnabled
+    }
+
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         intent?.action?.let { action ->
             when (action) {
