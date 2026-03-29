@@ -22,8 +22,8 @@ class ConvolutionEngine(private val sampleRate: Int) {
     companion object {
         private const val TAG = "ConvolutionEngine"
         const val MAX_IR_SAMPLES = 44100
-        private const val BLOCK_SIZE = 512
-        private const val FFT_SIZE   = 1024  // BLOCK_SIZE * 2
+        private const val BLOCK_SIZE = 256
+        private const val FFT_SIZE   = 1024  // >= BLOCK_SIZE + IR_len - 1
     }
 
     enum class IrSlot { LEFT, RIGHT }
