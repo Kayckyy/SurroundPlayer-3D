@@ -218,7 +218,7 @@
             <TextView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="Atenção: O Áudio 3D reduz naturalmente o volume da música. Ao desligar essa opção, reduza o volume do sistema para evitar sustos repentinos ou danos auditivos."
+                android:text="Atenção: O Áudio 3D reduz naturalmente o volume da música. Ao desligar essa opção, reduza o volume do sistema para evitar sustos repentinos ou danos auditivos ou aumente o post-gain logo abaixo para igualar ao som original."
                 android:textColor="#B5302D"
                 android:textSize="12sp"
                 android:layout_marginBottom="16dp" />
