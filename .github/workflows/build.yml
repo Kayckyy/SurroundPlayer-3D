@@ -29,35 +29,38 @@ jobs:
       - name: Permissão ao gradlew
         run: chmod +x ./gradlew
 
-      - name: Configurar keystore
+      - name: Criar keystore
         env:
           KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
-          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
-          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
-          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: |
-          # Verifica se os segredos existem
-          if [ -z "$KEYSTORE_BASE64" ]; then
-            echo "⚠️ KEYSTORE_BASE64 não configurado. Build sem assinatura."
+          if [ -n "$KEYSTORE_BASE64" ]; then
+            echo "$KEYSTORE_BASE64" | base64 -d > app/keystore.jks
+            echo "✅ Keystore criada em app/keystore.jks"
           else
-            echo "✅ Keystore configurado"
+            echo "⚠️ KEYSTORE_BASE64 não configurado"
           fi
 
       - name: Build APK
         env:
-          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: |
           if [ "${{ github.event.inputs.buildType }}" == "release" ]; then
             echo "📦 Buildando RELEASE assinado..."
-            ./gradlew assembleRelease 2>&1 | tail -100
+            ./gradlew assembleRelease
           else
             echo "🔧 Buildando DEBUG..."
-            ./gradlew assembleDebug 2>&1 | tail -100
+            ./gradlew assembleDebug
           fi
         
+      - name: Listar arquivos gerados
+        run: |
+          echo "📁 APKs gerados:"
+          find app/build/outputs -name "*.apk" -o -name "*.aab" | while read f; do
+            echo "  - $f ($(du -h "$f" | cut -f1))"
+          done
+
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
