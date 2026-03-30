@@ -123,6 +123,7 @@ class SettingsFragment : Fragment() {
             getMusicService()?.setBinauralEnabled(isChecked)
             binding.binauralSlotsContainer.visibility =
                 if (isChecked) View.VISIBLE else View.GONE
+            updateHaasEnabled(!isChecked)
             
             // Atualiza estado do Haas quando o áudio 3D muda
             updateHaasUiState()
@@ -165,6 +166,22 @@ class SettingsFragment : Fragment() {
         })
 
         binding.seekBarBinauralPostGain.progress = 24  // +12dB padrão
+    }
+
+    private fun updateHaasEnabled(enabled: Boolean) {
+    val alpha = if (enabled) 1.0f else 0.38f
+    binding.radioGroupHaas.isEnabled = enabled
+    binding.radioHaasOff.isEnabled    = enabled
+    binding.radioHaasShort.isEnabled  = enabled
+    binding.radioHaasMedium.isEnabled = enabled
+    binding.radioHaasLong.isEnabled   = enabled
+    // Ofusca visualmente o container inteiro
+    binding.radioGroupHaas.alpha = alpha
+    // Se ativou o binaural, força Haas off
+    if (!enabled) {
+        getMusicService()?.setHaasDelay(0)
+        binding.radioHaasOff.isChecked = true
+    }
     }
 
     // ========== HAAS (Especialização Estéreo) ==========
@@ -307,6 +324,7 @@ class SettingsFragment : Fragment() {
         // Haas - atualiza estado da UI
         updateHaasUiState()
         syncHaasFromService()
+        updateHaasEnabled(!s.isBinauralEnabled())
     }
 
     // ========== UTILITÁRIOS ==========
