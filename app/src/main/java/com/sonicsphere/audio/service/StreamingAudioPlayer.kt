@@ -245,10 +245,10 @@ class StreamingAudioPlayer {
                         shortBuf.get(samples)
 
                         // Pipeline — ordem importa
-                        bassBoostProcessor?.process(samples)   // 1. Grave
                         equalizerProcessor?.process(samples)   // 2. EQ
-                        reverbProcessor?.process(samples)      // 4. Reverb de sala
+                        bassBoostProcessor?.process(samples)   // 1. Grave
                         convolutionEngine?.process(samples)    // 3. HRTF binaural
+                        reverbProcessor?.process(samples)      // 4. Reverb de sala
                         haasProcessor?.process(samples)        // 5. Haas
                         
                         audioTrack?.write(samples, 0, samples.size)
