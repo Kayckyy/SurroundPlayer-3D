@@ -12,8 +12,8 @@ class ReverbProcessor(private val sampleRate: Int) {
     private val COMB_GAIN_BASE = 0.84f
 
     // Valores padrão para áudio 3D (fixos, otimizados)
-    private var roomSize = 0.50f  // um pouco maior que o padrão para 3D
-    private var wet      = 0.50f  // mais presença para imersão 3D
+    private var roomSize = 0.3f  // um pouco maior que o padrão para 3D
+    private var wet      = 0.2f  // mais presença para imersão 3D
     private var damping  = 0.6f  // levemente mais amortecido
 
     var enabled = false
@@ -102,10 +102,12 @@ class ReverbProcessor(private val sampleRate: Int) {
             revR = processAllpass(apR[1], revR)
 
             // Low cut 200Hz — remove graves da cauda do reverb
+            /*
             lcL += lcCoeff * (revL - lcL)
             lcR += lcCoeff * (revR - lcR)
             revL -= lcL
             revR -= lcR
+            */
             
             val outL = (dryL * dry + revL * wet).coerceIn(-1f, 1f)
             val outR = (dryR * dry + revR * wet).coerceIn(-1f, 1f)
