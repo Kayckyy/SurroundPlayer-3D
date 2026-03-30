@@ -123,6 +123,17 @@ class SettingsFragment : Fragment() {
             getMusicService()?.setBinauralEnabled(isChecked)
             binding.binauralSlotsContainer.visibility =
                 if (isChecked) View.VISIBLE else View.GONE
+            
+            // Atualiza estado do Haas quando o áudio 3D muda
+            updateHaasUiState()
+            
+            // Atualiza estado do switch de reverb também
+            binding.switchReverb.isEnabled = isChecked
+            if (!isChecked) {
+                // Se desligar áudio 3D, desliga reverb também
+                binding.switchReverb.isChecked = false
+            }
+            
             if (isChecked) refreshIrStatus()
         }
 
@@ -131,17 +142,72 @@ class SettingsFragment : Fragment() {
 
         binding.btnIrLeftClear.setOnClickListener  { resetIrToDefault(ConvolutionEngine.IrSlot.LEFT) }
         binding.btnIrRightClear.setOnClickListener { resetIrToDefault(ConvolutionEngine.IrSlot.RIGHT) }
-        binding.switchReverb.setOnCheckedChangeListener { _, isChecked -> getMusicService()?.setReverbEnabled(isChecked)
+        
+        // Switch do Reverb - só funciona se áudio 3D estiver ativo
+        binding.switchReverb.setOnCheckedChangeListener { _, isChecked ->
+            if (getMusicService()?.isBinauralEnabled() == true) {
+                getMusicService()?.setReverbEnabled(isChecked)
+            } else {
+                // Se áudio 3D não estiver ativo, não permite ligar reverb
+                binding.switchReverb.isChecked = false
+                Toast.makeText(requireContext(), 
+                    "Ative o Áudio 3D primeiro para usar o Reverb", 
+                    Toast.LENGTH_SHORT).show()
+            }
         }
+        
         // Post-gain: range -12dB a +12dB, seekbar 0–24, centro=12
         binding.seekBarBinauralPostGain.max = 24
-binding.seekBarBinauralPostGain.setOnSeekBarChangeListener(seekListener { p ->
-    val db = p - 12f
-    getMusicService()?.setBinauralPostGainDb(db)
-    binding.textBinauralPostGain.text = "${if (db >= 0) "+" else ""}${db.toInt()} dB"
-})
+        binding.seekBarBinauralPostGain.setOnSeekBarChangeListener(seekListener { p ->
+            val db = p - 12f
+            getMusicService()?.setBinauralPostGainDb(db)
+            binding.textBinauralPostGain.text = "${if (db >= 0) "+" else ""}${db.toInt()} dB"
+        })
 
-binding.seekBarBinauralPostGain.progress = 24  // +12dB padrão
+        binding.seekBarBinauralPostGain.progress = 24  // +12dB padrão
+    }
+
+    // ========== HAAS (Especialização Estéreo) ==========
+
+    private fun setupHaas() {
+        binding.radioGroupHaas.setOnCheckedChangeListener { _, id ->
+            // Só permite mudar se áudio 3D estiver desativado
+            if (getMusicService()?.isBinauralEnabled() == false) {
+                val ms = when (id) {
+                    binding.radioHaasShort.id  -> 10
+                    binding.radioHaasMedium.id -> 30
+                    binding.radioHaasLong.id   -> 50
+                    else -> 0
+                }
+                getMusicService()?.setHaasDelay(ms)
+            } else {
+                // Se áudio 3D estiver ativo, reverte a seleção
+                syncHaasFromService()
+                Toast.makeText(requireContext(), 
+                    "Desative o Áudio 3D para ajustar a Especialização Estéreo", 
+                    Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+    
+    private fun updateHaasUiState() {
+        val is3dEnabled = getMusicService()?.isBinauralEnabled() ?: false
+        binding.radioGroupHaas.isEnabled = !is3dEnabled
+        
+        // Desabilita visualmente os radios
+        binding.radioHaasOff.isEnabled = !is3dEnabled
+        binding.radioHaasShort.isEnabled = !is3dEnabled
+        binding.radioHaasMedium.isEnabled = !is3dEnabled
+        binding.radioHaasLong.isEnabled = !is3dEnabled
+    }
+    
+    private fun syncHaasFromService() {
+        when (getMusicService()?.getHaasDelay()) {
+            10   -> binding.radioHaasShort.isChecked  = true
+            30   -> binding.radioHaasMedium.isChecked = true
+            50   -> binding.radioHaasLong.isChecked   = true
+            else -> binding.radioHaasOff.isChecked    = true
+        }
     }
 
     private fun pickIrFile(slot: ConvolutionEngine.IrSlot) {
@@ -201,20 +267,6 @@ binding.seekBarBinauralPostGain.progress = 24  // +12dB padrão
         setIrStatus(ConvolutionEngine.IrSlot.RIGHT,
             if (engine.isSlotLoaded(ConvolutionEngine.IrSlot.RIGHT)) "Carregado" else "Padrao (asset)")
     }
-    
-    // ========== HAAS ==========
-
-    private fun setupHaas() {
-        binding.radioGroupHaas.setOnCheckedChangeListener { _, id ->
-            val ms = when (id) {
-                binding.radioHaasShort.id  -> 10
-                binding.radioHaasMedium.id -> 30
-                binding.radioHaasLong.id   -> 50
-                else -> 0
-            }
-            getMusicService()?.setHaasDelay(ms)
-        }
-    }
 
     // ========== SYNC COM SERVICE ==========
 
@@ -237,23 +289,24 @@ binding.seekBarBinauralPostGain.progress = 24  // +12dB padrão
         binding.textBassBoostValue.text = "${strength / 10}%"
 
         // Binaural
-        binding.switchBinaural.isChecked = s.isBinauralEnabled()
+        val is3dEnabled = s.isBinauralEnabled()
+        binding.switchBinaural.isChecked = is3dEnabled
         binding.binauralSlotsContainer.visibility =
-            if (s.isBinauralEnabled()) View.VISIBLE else View.GONE
-        if (s.isBinauralEnabled()) refreshIrStatus()
+            if (is3dEnabled) View.VISIBLE else View.GONE
+        if (is3dEnabled) refreshIrStatus()
 
         val gainDb = s.getBinauralPostGainDb()
         val gainProg = (gainDb + 12f).toInt().coerceIn(0, 24)
         binding.seekBarBinauralPostGain.progress = gainProg
         binding.textBinauralPostGain.text = "${if (gainDb >= 0) "+" else ""}${gainDb.toInt()} dB"
-        binding.switchReverb.isChecked = s.isReverbEnabled()
-        // Haas
-        when (s.getHaasDelay()) {
-            10   -> binding.radioHaasShort.isChecked  = true
-            30   -> binding.radioHaasMedium.isChecked = true
-            50   -> binding.radioHaasLong.isChecked   = true
-            else -> binding.radioHaasOff.isChecked    = true
-        }
+        
+        // Reverb - só mostra se áudio 3D estiver ativo
+        binding.switchReverb.isChecked = s.isReverbEnabled() && is3dEnabled
+        binding.switchReverb.isEnabled = is3dEnabled
+        
+        // Haas - atualiza estado da UI
+        updateHaasUiState()
+        syncHaasFromService()
     }
 
     // ========== UTILITÁRIOS ==========
