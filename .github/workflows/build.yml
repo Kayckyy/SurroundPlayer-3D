@@ -31,20 +31,33 @@ jobs:
 
       - name: Criar keystore
         env:
-          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
         run: |
-          if [ -n "$KEYSTORE_BASE64" ]; then
-            echo "$KEYSTORE_BASE64" | base64 -d > app/keystore.jks
-            echo "✅ Keystore criada em app/keystore.jks"
-          else
-            echo "⚠️ KEYSTORE_BASE64 não configurado"
+          # Verifica se os segredos existem
+          if [ -z "$KEYSTORE_PASSWORD" ] || [ -z "$KEY_ALIAS" ]; then
+            echo "❌ KEYSTORE_PASSWORD ou KEY_ALIAS não configurados"
+            exit 1
           fi
+          
+          # Cria keystore
+          keytool -genkey -v -keystore app/keystore.jks \
+            -alias "$KEY_ALIAS" \
+            -keyalg RSA \
+            -keysize 2048 \
+            -validity 10000 \
+            -dname "CN=SonicSphere, OU=Development, O=SonicSphere, L=City, S=State, C=BR" \
+            -storepass "$KEYSTORE_PASSWORD" \
+            -keypass "$KEYSTORE_PASSWORD" \
+            -noprompt
+          
+          echo "✅ Keystore criada em app/keystore.jks"
+          ls -la app/keystore.jks
 
       - name: Build APK
         env:
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
-          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: |
           if [ "${{ github.event.inputs.buildType }}" == "release" ]; then
             echo "📦 Buildando RELEASE assinado..."
