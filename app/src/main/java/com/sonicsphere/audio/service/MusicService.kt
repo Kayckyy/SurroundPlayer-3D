@@ -219,15 +219,7 @@ class MusicService : Service() {
     fun isBinauralEnabled(): Boolean = convolutionEngine?.enabled ?: false
 
     fun setBinauralEnabled(enabled: Boolean) {
-    convolutionEngine?.enabled = enabled
-    
-    player?.reverbProcessor?.apply {
-        if (enabled) {
-            setFor3DAudio()
-        }
-        this.enabled = enabled
-    }
-    
+    convolutionEngine?.enabled = enabled 
     prefs.edit().apply {
         putBoolean("binaural_enabled", enabled)
         putBoolean("reverb_enabled", enabled)  // Salva junto
