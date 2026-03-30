@@ -291,15 +291,28 @@ class MusicService : Service() {
     fun setReverbEnabled(enabled: Boolean) {
     player?.reverbProcessor?.enabled = enabled
     prefs.edit().putBoolean("reverb_enabled", enabled).apply()
-    }
+}
 
-    fun isReverbEnabled(): Boolean = prefs.getBoolean("reverb_enabled", false)
+fun isReverbEnabled(): Boolean = prefs.getBoolean("reverb_enabled", false)
 
-    fun getReverbRoomSize(): Float = prefs.getFloat("reverb_room_size", 0.25f)
+fun getReverbRoomSize(): Float = prefs.getFloat("reverb_room_size", 0.25f)
+fun getReverbWet(): Float = prefs.getFloat("reverb_wet", 0.18f)
+fun getReverbDamping(): Float = prefs.getFloat("reverb_damping", 0.7f)
 
-    fun getReverbWet(): Float = prefs.getFloat("reverb_wet", 0.18f)
+fun setReverbRoomSize(v: Float) {
+    player?.reverbProcessor?.roomSize = v
+    prefs.edit().putFloat("reverb_room_size", v).apply()
+}
 
-    fun getReverbDamping(): Float = prefs.getFloat("reverb_damping", 0.7f)
+fun setReverbWet(v: Float) {
+    player?.reverbProcessor?.wet = v
+    prefs.edit().putFloat("reverb_wet", v).apply()
+}
+
+fun setReverbDamping(v: Float) {
+    player?.reverbProcessor?.damping = v
+    prefs.edit().putFloat("reverb_damping", v).apply()
+}
 
     // ========== AUDIO EFFECTS (pipeline próprio) ==========
 
