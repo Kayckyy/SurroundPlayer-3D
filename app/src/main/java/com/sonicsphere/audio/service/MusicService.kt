@@ -300,20 +300,19 @@ fun getReverbWet(): Float = prefs.getFloat("reverb_wet", 0.18f)
 fun getReverbDamping(): Float = prefs.getFloat("reverb_damping", 0.7f)
 
 fun setReverbRoomSize(v: Float) {
-    player?.reverbProcessor?.roomSize = v
+    player?.reverbProcessor?.setRoomSize(v)
     prefs.edit().putFloat("reverb_room_size", v).apply()
 }
 
 fun setReverbWet(v: Float) {
-    player?.reverbProcessor?.wet = v
+    player?.reverbProcessor?.setWetLevel(v)
     prefs.edit().putFloat("reverb_wet", v).apply()
 }
 
 fun setReverbDamping(v: Float) {
-    player?.reverbProcessor?.damping = v
+    player?.reverbProcessor?.setDamping(v)
     prefs.edit().putFloat("reverb_damping", v).apply()
 }
-
     // ========== AUDIO EFFECTS (pipeline próprio) ==========
 
     private fun setupAudioEffects() {
@@ -739,11 +738,12 @@ fun setReverbDamping(v: Float) {
 
                     // Restaura estado do reverb
                     player?.reverbProcessor?.apply {
-                        roomSize = getReverbRoomSize()
-                        wet      = getReverbWet()
-                        damping  = getReverbDamping()
-                        enabled  = prefs.getBoolean("reverb_enabled", false)
-                    }
+                    setRoomSize(getReverbRoomSize())
+                    setWetLevel(getReverbWet())
+                    setDamping(getReverbDamping())
+                    enabled = prefs.getBoolean("reverb_enabled", false)
+                   }
+                    
                     // Carrega IRs (assets padrão + externos salvos) se ainda não carregados
                     val engine = player?.convolutionEngine
                     if (engine != null && !engine.hasPrincipalIrs()) {
