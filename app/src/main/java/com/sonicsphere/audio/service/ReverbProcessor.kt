@@ -12,8 +12,8 @@ class ReverbProcessor(private val sampleRate: Int) {
     private val COMB_GAIN_BASE = 0.84f
 
     // Valores padrão para áudio 3D (fixos, otimizados)
-    private var roomSize = 0.20f  // um pouco maior que o padrão para 3D
-    private var wet      = 0.12f  // mais presença para imersão 3D
+    private var roomSize = 0.50f  // um pouco maior que o padrão para 3D
+    private var wet      = 0.50f  // mais presença para imersão 3D
     private var damping  = 0.6f  // levemente mais amortecido
 
     var enabled = false
