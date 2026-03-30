@@ -104,6 +104,33 @@ class ReverbProcessor(private val sampleRate: Int) {
         return buffered - input
     }
 
+    // ========== MÉTODOS PÚBLICOS PARA CONFIGURAÇÃO ==========
+
+fun setRoomSize(value: Float) {
+    roomSize = value.coerceIn(0.05f, 0.5f)
+    buildFilters()  // Reconstrói os buffers com o novo tamanho
+}
+
+fun setWetLevel(value: Float) {
+    wet = value.coerceIn(0.0f, 0.5f)
+}
+
+fun setDamping(value: Float) {
+    damping = value.coerceIn(0.5f, 0.95f)
+}
+
+fun getRoomSize(): Float = roomSize
+fun getWetLevel(): Float = wet
+fun getDamping(): Float = damping
+
+// Configuração rápida para áudio 3D (valores otimizados)
+fun setFor3DAudio() {
+    roomSize = 0.15f
+    wet = 0.10f
+    damping = 0.7f
+    buildFilters()
+}
+
     fun reset() {
         combsL.forEach { it.buf.fill(0f); it.idx = 0; it.lpf = 0f }
         combsR.forEach { it.buf.fill(0f); it.idx = 0; it.lpf = 0f }
