@@ -288,10 +288,12 @@ class MusicService : Service() {
 
     // ========== REVERB ==========
 
-    fun setReverbEnabled(enabled: Boolean) {
-    player?.reverbProcessor?.enabled = enabled
-    prefs.edit().putBoolean("reverb_enabled", enabled).apply()
-}
+    fun setBinauralEnabled(enabled: Boolean) {
+    convolutionEngine?.enabled = enabled
+    prefs.edit().apply {
+        putBoolean("binaural_enabled", enabled)
+    }.apply()
+    }
 
 fun isReverbEnabled(): Boolean = prefs.getBoolean("reverb_enabled", false)
 
