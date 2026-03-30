@@ -10,8 +10,8 @@ class ReverbProcessor(private val sampleRate: Int) {
     private val ALLPASS_MS     = floatArrayOf(5.0f, 1.7f)
     private val COMB_GAIN_BASE = 0.84f
 
-    private var roomSize = 0.15f
-    private var wet      = 0.10f
+    private var roomSize = 0.25f
+    private var wet      = 0.40f
     private var damping  = 0.7f
 
     var enabled = false
