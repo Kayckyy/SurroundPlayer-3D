@@ -1,7 +1,16 @@
-name: Build Debug APK
+name: Build Signed APK
 
 on:
   workflow_dispatch:
+    inputs:
+      buildType:
+        description: 'Tipo de build (debug/release)'
+        required: true
+        default: 'release'
+        type: choice
+        options:
+          - debug
+          - release
 
 jobs:
   build:
@@ -20,12 +29,40 @@ jobs:
       - name: Permissão ao gradlew
         run: chmod +x ./gradlew
 
-      - name: Build Debug APK
-        run: ./gradlew assembleDebug 2>&1 | tail -80
+      - name: Configurar keystore
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          # Verifica se os segredos existem
+          if [ -z "$KEYSTORE_BASE64" ]; then
+            echo "⚠️ KEYSTORE_BASE64 não configurado. Build sem assinatura."
+          else
+            echo "✅ Keystore configurado"
+          fi
+
+      - name: Build APK
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          if [ "${{ github.event.inputs.buildType }}" == "release" ]; then
+            echo "📦 Buildando RELEASE assinado..."
+            ./gradlew assembleRelease 2>&1 | tail -100
+          else
+            echo "🔧 Buildando DEBUG..."
+            ./gradlew assembleDebug 2>&1 | tail -100
+          fi
         
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: SonicSphere-debug
-          path: app/build/outputs/apk/debug/app-debug.apk
+          name: SonicSphere-${{ github.event.inputs.buildType }}
+          path: |
+            app/build/outputs/apk/debug/*.apk
+            app/build/outputs/apk/release/*.apk
           retention-days: 7
