@@ -102,11 +102,11 @@ class ReverbProcessor(private val sampleRate: Int) {
             revR = processAllpass(apR[1], revR)
 
             // Low cut 200Hz — remove graves da cauda do reverb
-            lcL = lcCoeff * (lcL + revL - lcL)
-            lcR = lcCoeff * (lcR + revR - lcR)
+            lcL += lcCoeff * (revL - lcL)
+            lcR += lcCoeff * (revR - lcR)
             revL -= lcL
             revR -= lcR
-
+            
             val outL = (dryL * dry + revL * wet).coerceIn(-1f, 1f)
             val outR = (dryR * dry + revR * wet).coerceIn(-1f, 1f)
 
