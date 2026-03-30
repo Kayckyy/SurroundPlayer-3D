@@ -33,9 +33,9 @@ class ReverbProcessor(private val sampleRate: Int) {
     private var lcL = 0f
     private var lcR = 0f
     private val lcCoeff: Float = run {
-        val rc = 1.0 / (2.0 * Math.PI * 200.0)
-        val dt = 1.0 / sampleRate
-        (rc / (rc + dt)).toFloat()
+    val rc = 1.0 / (2.0 * Math.PI * 200.0)
+    val dt = 1.0 / sampleRate
+    (dt / (rc + dt)).toFloat()  // era rc/(rc+dt), deve ser dt/(rc+dt)
     }
 
     init { buildFilters() }
