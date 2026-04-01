@@ -29,6 +29,8 @@ class ConvolutionEngine(private val sampleRate: Int) {
         const val MAX_IR_SAMPLES = 44100
         private const val BLOCK_SIZE = 256
         private const val FFT_SIZE   = 1024  // >= BLOCK_SIZE + IR_len - 1
+        private const val FADE_STEP = 1f / (44100f * 0.08f)  // ~80ms
+        
 
         // Atenuação do cross-talk — igual ao Python (0.6x)
         private const val XTALK_GAIN = 0.3f
@@ -45,6 +47,8 @@ class ConvolutionEngine(private val sampleRate: Int) {
     private var irRL: FloatArray? = null
     private var irLR: FloatArray? = null
     private var irRR: FloatArray? = null
+    private var fadeGain   = 0f
+    private var fadeTarget = 0f
 
     private val slotsLoaded = mutableSetOf<IrSlot>()
 
@@ -72,10 +76,11 @@ class ConvolutionEngine(private val sampleRate: Int) {
     }
 
     @Volatile var enabled = false
-    @Volatile var postGain = 10f.pow(12f / 20f)  // +12dB por padrão
-
-    fun setPostGainDb(db: Float) { postGain = 10f.pow(db / 20f) }
-
+    set(value) {
+        field = value
+        fadeTarget = if (value) 1f else 0f
+    }
+    
     fun isSlotLoaded(slot: IrSlot) = slot in slotsLoaded
     fun hasPrincipalIrs() = IrSlot.LEFT in slotsLoaded && IrSlot.RIGHT in slotsLoaded
 
@@ -167,15 +172,17 @@ class ConvolutionEngine(private val sampleRate: Int) {
         // Overlap-Add + mix com cross-talk:
         // outL = conv(inL, IR_LL) + conv(inR, IR_LR) * XTALK
         // outR = conv(inL, IR_RL) * XTALK + conv(inR, IR_RR)
-        val g = postGain
         for (i in 0 until BLOCK_SIZE) {
-            // LPF do cross-talk aplicado por amostra
-            xtalkLpfL += xtalkLpfCoeff * ((convLR[i*2] + olLR[i]) - xtalkLpfL)
-            xtalkLpfR += xtalkLpfCoeff * ((convRL[i*2] + olRL[i]) - xtalkLpfR)
-            val outL = (convLL[i*2] + olLL[i]) + xtalkLpfL * XTALK_GAIN
-            val outR = xtalkLpfR * XTALK_GAIN + (convRR[i*2] + olRR[i])
-            outBufL[i] = outL * g
-            outBufR[i] = outR * g
+    // Fade suave ao ligar/desligar (evita susto de volume)
+    if (fadeGain < fadeTarget) fadeGain = minOf(fadeGain + FADE_STEP, fadeTarget)
+    else if (fadeGain > fadeTarget) fadeGain = maxOf(fadeGain - FADE_STEP, fadeTarget)
+
+    xtalkLpfL += xtalkLpfCoeff * ((convLR[i*2] + olLR[i]) - xtalkLpfL)
+    xtalkLpfR += xtalkLpfCoeff * ((convRL[i*2] + olRL[i]) - xtalkLpfR)
+    val outL = (convLL[i*2] + olLL[i]) + xtalkLpfL * XTALK_GAIN
+    val outR = xtalkLpfR * XTALK_GAIN + (convRR[i*2] + olRR[i])
+    outBufL[i] = outL * fadeGain
+    outBufR[i] = outR * fadeGain
         }
         // Salva tails
         for (i in BLOCK_SIZE until FFT_SIZE) {
