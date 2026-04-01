@@ -222,20 +222,12 @@ class MusicService : Service() {
     convolutionEngine?.enabled = enabled 
     prefs.edit().apply {
         putBoolean("binaural_enabled", enabled)
-        putBoolean("reverb_enabled", enabled)  // Salva junto
     }.apply()
     
     Log.d("MusicService", "🎧 Áudio 3D ${if (enabled) "ON" else "OFF"}")
     }
 
     fun getConvolutionEngine(): ConvolutionEngine? = convolutionEngine
-
-    fun getBinauralPostGainDb(): Float = prefs.getFloat("binaural_post_gain_db", 12f)
-
-    fun setBinauralPostGainDb(db: Float) {
-        convolutionEngine?.postGain = 10f.pow(db / 20f)
-        prefs.edit().putFloat("binaural_post_gain_db", db).apply()
-    }
 
     fun loadConvolutionIr(
         slot: ConvolutionEngine.IrSlot,
