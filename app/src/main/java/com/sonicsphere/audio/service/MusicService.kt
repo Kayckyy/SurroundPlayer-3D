@@ -274,8 +274,6 @@ class MusicService : Service() {
 
         // 3. Ativa binaural se estava ligado
         if (prefs.getBoolean("binaural_enabled", false)) engine.enabled = true
-        val savedGainDb = prefs.getFloat("binaural_post_gain_db", 0f)
-        if (savedGainDb != 0f) engine.postGain = 10f.pow(savedGainDb / 20f)
     }
 
     // ========== REVERB ==========
