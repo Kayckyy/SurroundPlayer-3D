@@ -202,7 +202,7 @@ class SettingsFragment : Fragment() {
             else -> binding.radioHaasOff.isChecked    = true
         }
     }
-
+    }
     private fun pickIrFile(slot: ConvolutionEngine.IrSlot) {
         val ctx = requireContext()
         val files = IrLoader.listAvailableIrs(ctx)
