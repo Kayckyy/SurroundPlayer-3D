@@ -131,19 +131,7 @@ class SettingsFragment : Fragment() {
 
         binding.btnIrLeftClear.setOnClickListener  { resetIrToDefault(ConvolutionEngine.IrSlot.LEFT) }
         binding.btnIrRightClear.setOnClickListener { resetIrToDefault(ConvolutionEngine.IrSlot.RIGHT) }
-
-        binding.switchReverb.setOnCheckedChangeListener { _, isChecked ->
-            getMusicService()?.setReverbEnabled(isChecked)
         }
-
-        binding.seekBarBinauralPostGain.max = 24
-        binding.seekBarBinauralPostGain.setOnSeekBarChangeListener(seekListener { p ->
-            val db = p - 12f
-            getMusicService()?.setBinauralPostGainDb(db)
-            binding.textBinauralPostGain.text = "${if (db >= 0) "+" else ""}${db.toInt()} dB"
-        })
-        binding.seekBarBinauralPostGain.progress = 24
-    } // <- fecha setupBinaural()
 
     private fun pickIrFile(slot: ConvolutionEngine.IrSlot) {
         val ctx = requireContext()
