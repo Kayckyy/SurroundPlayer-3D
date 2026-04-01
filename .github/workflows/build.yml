@@ -55,7 +55,7 @@ jobs:
           ls -la app/keystore.jks
 
       - name: Clean
-        run: .gradlew clean
+        run: ./gradlew clean
 
       - name: Build APK
         env:
