@@ -337,6 +337,8 @@
 
                 </LinearLayout>
 
+            </LinearLayout>
+
         <!-- SECAO ESPECIALIZACAO ESTEREO (HAAS) -->
         <LinearLayout
             android:layout_width="match_parent"
