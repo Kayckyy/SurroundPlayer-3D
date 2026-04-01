@@ -218,8 +218,8 @@
             <TextView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="O Audio 3D processa o sinal binauralmente. O post-gain abaixo permite ajustar o volume de saida."
-                android:textColor="#CDE038"
+                android:text="A Convolução diminui o volume de saída naturalmente de acordo com o sinal do IR."
+                android:textColor="#72BA3F"
                 android:textSize="12sp"
                 android:layout_marginBottom="16dp" />
 
