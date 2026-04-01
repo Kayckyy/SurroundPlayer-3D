@@ -54,6 +54,9 @@ jobs:
           echo "✅ Keystore criada em app/keystore.jks"
           ls -la app/keystore.jks
 
+      - name: Clean
+        run: .gradlew clean
+
       - name: Build APK
         env:
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
