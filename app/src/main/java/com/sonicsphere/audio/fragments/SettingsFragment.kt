@@ -230,13 +230,6 @@ class SettingsFragment : Fragment() {
             if (s.isBinauralEnabled()) View.VISIBLE else View.GONE
         if (s.isBinauralEnabled()) refreshIrStatus()
 
-        val gainDb = s.getBinauralPostGainDb()
-        val gainProg = (gainDb + 12f).toInt().coerceIn(0, 24)
-        binding.seekBarBinauralPostGain.progress = gainProg
-        binding.textBinauralPostGain.text = "${if (gainDb >= 0) "+" else ""}${gainDb.toInt()} dB"
-
-        binding.switchReverb.isChecked = s.isReverbEnabled()
-
         // Haas
         when (s.getHaasDelay()) {
             10   -> binding.radioHaasShort.isChecked  = true
