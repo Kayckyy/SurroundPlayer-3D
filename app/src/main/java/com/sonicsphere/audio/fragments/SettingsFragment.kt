@@ -144,30 +144,6 @@ class SettingsFragment : Fragment() {
         binding.btnIrLeftClear.setOnClickListener  { resetIrToDefault(ConvolutionEngine.IrSlot.LEFT) }
         binding.btnIrRightClear.setOnClickListener { resetIrToDefault(ConvolutionEngine.IrSlot.RIGHT) }
         
-        // Switch do Reverb - só funciona se áudio 3D estiver ativo
-        binding.switchReverb.setOnCheckedChangeListener { _, isChecked ->
-            if (getMusicService()?.isBinauralEnabled() == true) {
-                getMusicService()?.setReverbEnabled(isChecked)
-            } else {
-                // Se áudio 3D não estiver ativo, não permite ligar reverb
-                binding.switchReverb.isChecked = false
-                Toast.makeText(requireContext(), 
-                    "Ative o Áudio 3D primeiro para usar o Reverb", 
-                    Toast.LENGTH_SHORT).show()
-            }
-        }
-        
-        // Post-gain: range -12dB a +12dB, seekbar 0–24, centro=12
-        binding.seekBarBinauralPostGain.max = 24
-        binding.seekBarBinauralPostGain.setOnSeekBarChangeListener(seekListener { p ->
-            val db = p - 12f
-            getMusicService()?.setBinauralPostGainDb(db)
-            binding.textBinauralPostGain.text = "${if (db >= 0) "+" else ""}${db.toInt()} dB"
-        })
-
-        binding.seekBarBinauralPostGain.progress = 24  // +12dB padrão
-    }
-
     private fun updateHaasEnabled(enabled: Boolean) {
     val alpha = if (enabled) 1.0f else 0.38f
     binding.radioGroupHaas.isEnabled = enabled
@@ -311,15 +287,6 @@ class SettingsFragment : Fragment() {
         binding.binauralSlotsContainer.visibility =
             if (is3dEnabled) View.VISIBLE else View.GONE
         if (is3dEnabled) refreshIrStatus()
-
-        val gainDb = s.getBinauralPostGainDb()
-        val gainProg = (gainDb + 12f).toInt().coerceIn(0, 24)
-        binding.seekBarBinauralPostGain.progress = gainProg
-        binding.textBinauralPostGain.text = "${if (gainDb >= 0) "+" else ""}${gainDb.toInt()} dB"
-        
-        // Reverb - só mostra se áudio 3D estiver ativo
-        binding.switchReverb.isChecked = s.isReverbEnabled() && is3dEnabled
-        binding.switchReverb.isEnabled = is3dEnabled
         
         // Haas - atualiza estado da UI
         updateHaasUiState()
