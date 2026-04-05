@@ -244,13 +244,7 @@ class StreamingAudioPlayer {
                         // Pipeline — ordem importa
                         equalizerProcessor?.process(samples)   // 2. EQ
                         bassBoostProcessor?.process(samples)   // 1. Grave
-                        if (convolutionEngine?.enabled == true) {
-                            applyGain(samples, 1.7f)  // compensa a perda da convolução
-                             convolutionEngine?.process(samples)
-                        } else {
-                            
-                            applyGain(samples, 0.7f)  // reduz um pouco o direto pra igualar
-                        }
+                        convolutionEngine?.process(samples)
                         haasProcessor?.process(samples)        // 4. Haas
                         
                         audioTrack?.write(samples, 0, samples.size)
@@ -285,20 +279,6 @@ class StreamingAudioPlayer {
             }
             Log.d(TAG, "🔚 Loop gen=$myGeneration encerrado")
         }
-    }
-
-    private fun applyGain(samples: ShortArray, factor: Float) {
-    for (i in samples.indices) {
-        samples[i] = (samples[i] * factor).toInt().coerceIn(-32768, 32767).toShort()
-    }
-    }
-
-    private fun softClip(x: Float): Float {
-    val threshold = 24000f // ~73% de 32767
-    val sign = if (x >= 0) 1f else -1f
-    val abs = kotlin.math.abs(x)
-    return if (abs <= threshold) x
-    else sign * (threshold + (32767f - threshold) * kotlin.math.tanh((abs - threshold) / (32767f - threshold)))
     }
 
     fun pause() {
