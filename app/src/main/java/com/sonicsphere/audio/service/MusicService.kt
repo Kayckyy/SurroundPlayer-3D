@@ -267,33 +267,6 @@ class MusicService : Service() {
         if (prefs.getBoolean("binaural_enabled", false)) engine.enabled = true
     }
 
-    // ========== REVERB ==========
-
-    fun setReverbEnabled(enabled: Boolean) {
-        player?.reverbProcessor?.enabled = enabled
-    }
-
-    fun isReverbEnabled(): Boolean = prefs.getBoolean("reverb_enabled", false)
-
-    fun getReverbRoomSize(): Float = prefs.getFloat("reverb_room_size", 0.25f)
-    fun getReverbWet(): Float = prefs.getFloat("reverb_wet", 0.18f)
-    fun getReverbDamping(): Float = prefs.getFloat("reverb_damping", 0.7f)
-
-    fun setReverbRoomSize(v: Float) {
-        player?.reverbProcessor?.setRoomSize(v)
-        prefs.edit().putFloat("reverb_room_size", v).apply()
-    }
-
-    fun setReverbWet(v: Float) {
-        player?.reverbProcessor?.setWetLevel(v)
-        prefs.edit().putFloat("reverb_wet", v).apply()
-    }
-
-    fun setReverbDamping(v: Float) {
-        player?.reverbProcessor?.setDamping(v)
-        prefs.edit().putFloat("reverb_damping", v).apply()
-    }
-
     // ========== AUDIO EFFECTS ==========
 
     private fun setupAudioEffects() {
