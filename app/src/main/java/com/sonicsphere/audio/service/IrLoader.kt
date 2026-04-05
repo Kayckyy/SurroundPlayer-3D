@@ -181,11 +181,24 @@ object IrLoader {
                 right[i] = if (numChannels >= 2) readSample(buf, bitsPerSample, audioFormat)
                            else left[i]
             }
+            normalizeIr(left, right)
             WavData(left, right, sampleRate)
         } catch (e: Exception) {
             Log.e(TAG, "Erro ao parsear WAV: ${e.message}")
             null
         }
+    }
+
+    private fun normalizeIr(left: FloatArray, right: FloatArray) {
+    val peak = maxOf(
+        left.maxOfOrNull { kotlin.math.abs(it) } ?: 0f,
+        right.maxOfOrNull { kotlin.math.abs(it) } ?: 0f
+    )
+    if (peak > 0f && peak != 1f) {
+        val gain = 1f / peak
+        for (i in left.indices) { left[i] *= gain; right[i] *= gain }
+        Log.d(TAG, "IR normalizada — peak era $peak, gain aplicado: $gain")
+    }
     }
 
     private fun readSample(buf: ByteBuffer, bits: Int, fmt: Int): Float = when (bits) {
