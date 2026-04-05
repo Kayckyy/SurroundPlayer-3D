@@ -12,18 +12,18 @@
         android:orientation="vertical"
         android:padding="16dp">
 
-        <!-- Titulo -->
+        <!-- Título -->
         <TextView
             android:id="@+id/textView"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="Configuracoes de Audio"
+            android:text="Audio Settings"
             android:textColor="@color/white"
             android:textSize="24sp"
             android:textStyle="bold"
             android:layout_marginBottom="24dp" />
 
-        <!-- SECAO EQUALIZER -->
+        <!-- SEÇÃO EQUALIZER -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -58,7 +58,7 @@
             <TextView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="Ajuste as frequencias do audio"
+                android:text="Adjust audio frequencies"
                 android:textColor="@color/gray"
                 android:textSize="14sp"
                 android:layout_marginTop="4dp"
@@ -73,7 +73,7 @@
 
         </LinearLayout>
 
-        <!-- SECAO BASS BOOST -->
+        <!-- SEÇÃO BASS BOOST -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -108,7 +108,7 @@
             <TextView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="Aumenta as frequencias graves"
+                android:text="Boosts low frequencies"
                 android:textColor="@color/gray"
                 android:textSize="14sp"
                 android:layout_marginTop="4dp"
@@ -131,7 +131,7 @@
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="Intensidade: "
+                        android:text="Strength: "
                         android:textColor="@color/white"
                         android:textSize="14sp" />
 
@@ -157,7 +157,7 @@
 
         </LinearLayout>
 
-        <!-- SECAO AUDIO 3D BINAURAL -->
+        <!-- SEÇÃO ÁUDIO 3D BINAURAL (HRTF / ConvolutionEngine) -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -166,7 +166,7 @@
             android:padding="16dp"
             android:layout_marginBottom="16dp">
 
-            <!-- Cabecalho + switch -->
+            <!-- Cabeçalho + switch -->
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
@@ -182,7 +182,7 @@
                     <TextView
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:text="Audio 3D (Binaural HRTF)"
+                        android:text="3D Audio (Binaural HRTF)"
                         android:textColor="@color/white"
                         android:textSize="18sp"
                         android:textStyle="bold" />
@@ -190,7 +190,7 @@
                     <TextView
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:text="HRTF - Convolucao"
+                        android:text="HRTF - Convolution"
                         android:textColor="@color/spotify_green"
                         android:textSize="11sp"
                         android:layout_marginTop="2dp"
@@ -209,21 +209,21 @@
             <TextView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="Carregue IRs WAV em Android/data/com.sonicsphere.audio/files/ir/"
+                android:text="Load WAV IRs into Android/data/com.sonicsphere.audio/files/ir/"
                 android:textColor="@color/gray"
                 android:textSize="13sp"
                 android:layout_marginTop="4dp"
-                android:layout_marginBottom="8dp" />
+                android:layout_marginBottom="16dp" />
 
             <TextView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="A Convolução diminui o volume de saída naturalmente de acordo com o sinal do IR."
-                android:textColor="#72BA3F"
+                android:text="Warning: 3D Audio naturally lowers the music volume. Before disabling it, reduce your system volume to avoid sudden loud bursts or hearing damage."
+                android:textColor="#B5302D"
                 android:textSize="12sp"
                 android:layout_marginBottom="16dp" />
 
-            <!-- Painel expandido quando Audio 3D ligado -->
+            <!-- Painel de slots (visivel quando switch ON) -->
             <LinearLayout
                 android:id="@+id/binauralSlotsContainer"
                 android:layout_width="match_parent"
@@ -257,7 +257,7 @@
                             android:id="@+id/textIrLeft"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:text="Padrao (asset)"
+                            android:text="Default (built-in)"
                             android:textColor="@color/gray"
                             android:textSize="12sp" />
 
@@ -267,7 +267,7 @@
                         android:id="@+id/btnIrLeft"
                         android:layout_width="wrap_content"
                         android:layout_height="36dp"
-                        android:text="Trocar"
+                        android:text="Change"
                         android:textSize="12sp"
                         android:backgroundTint="@color/spotify_green"
                         android:textColor="@color/black" />
@@ -289,8 +289,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:orientation="horizontal"
-                    android:gravity="center_vertical"
-                    android:layout_marginBottom="16dp">
+                    android:gravity="center_vertical">
 
                     <LinearLayout
                         android:layout_width="0dp"
@@ -310,7 +309,7 @@
                             android:id="@+id/textIrRight"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:text="Padrao (asset)"
+                            android:text="Default (built-in)"
                             android:textColor="@color/gray"
                             android:textSize="12sp" />
 
@@ -320,7 +319,7 @@
                         android:id="@+id/btnIrRight"
                         android:layout_width="wrap_content"
                         android:layout_height="36dp"
-                        android:text="Trocar"
+                        android:text="Change"
                         android:textSize="12sp"
                         android:backgroundTint="@color/spotify_green"
                         android:textColor="@color/black" />
@@ -341,7 +340,163 @@
 
         </LinearLayout>
 
-        <!-- SECAO ESPECIALIZACAO ESTEREO (HAAS) -->
+        <!-- SECAO REVERB -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:background="#1A1A1A"
+            android:padding="16dp"
+            android:layout_marginBottom="16dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical">
+
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="Reverb"
+                    android:textColor="@color/white"
+                    android:textSize="18sp"
+                    android:textStyle="bold" />
+
+                <androidx.appcompat.widget.SwitchCompat
+                    android:id="@+id/switchReverb"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:theme="@style/SwitchTheme" />
+
+            </LinearLayout>
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Synthetic room reverb (Schroeder)"
+                android:textColor="@color/gray"
+                android:textSize="14sp"
+                android:layout_marginTop="4dp"
+                android:layout_marginBottom="16dp" />
+
+            <LinearLayout
+                android:id="@+id/reverbControlsContainer"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:visibility="gone">
+
+                <!-- Room Size -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:layout_marginBottom="4dp">
+
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="Room Size"
+                        android:textColor="@color/white"
+                        android:textSize="14sp" />
+
+                    <TextView
+                        android:id="@+id/textReverbRoomSize"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="50%"
+                        android:textColor="@color/spotify_green"
+                        android:textSize="14sp"
+                        android:textStyle="bold" />
+
+                </LinearLayout>
+
+                <SeekBar
+                    android:id="@+id/seekBarReverbRoomSize"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginBottom="16dp"
+                    android:progressTint="@color/spotify_green"
+                    android:thumbTint="@color/spotify_green" />
+
+                <!-- Wet -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:layout_marginBottom="4dp">
+
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="Wet (mix)"
+                        android:textColor="@color/white"
+                        android:textSize="14sp" />
+
+                    <TextView
+                        android:id="@+id/textReverbWet"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="25%"
+                        android:textColor="@color/spotify_green"
+                        android:textSize="14sp"
+                        android:textStyle="bold" />
+
+                </LinearLayout>
+
+                <SeekBar
+                    android:id="@+id/seekBarReverbWet"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginBottom="16dp"
+                    android:progressTint="@color/spotify_green"
+                    android:thumbTint="@color/spotify_green" />
+
+                <!-- Damping -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:layout_marginBottom="4dp">
+
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="Damping"
+                        android:textColor="@color/white"
+                        android:textSize="14sp" />
+
+                    <TextView
+                        android:id="@+id/textReverbDamping"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="40%"
+                        android:textColor="@color/spotify_green"
+                        android:textSize="14sp"
+                        android:textStyle="bold" />
+
+                </LinearLayout>
+
+                <SeekBar
+                    android:id="@+id/seekBarReverbDamping"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:progressTint="@color/spotify_green"
+                    android:thumbTint="@color/spotify_green" />
+
+            </LinearLayout>
+
+        </LinearLayout>
+
+        <!-- SEÇÃO STEREO WIDENING (HAAS EFFECT) -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -364,7 +519,7 @@
                     <TextView
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:text="Especializacao Estereo"
+                        android:text="Stereo Widening"
                         android:textColor="@color/white"
                         android:textSize="18sp"
                         android:textStyle="bold" />
@@ -391,7 +546,7 @@
             <TextView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="Delay L/R para criar espacializacao estereo"
+                android:text="L/R delay for stereo widening"
                 android:textColor="@color/gray"
                 android:textSize="14sp"
                 android:layout_marginTop="4dp"
@@ -407,7 +562,7 @@
                     android:id="@+id/radioHaasOff"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:text="Desativado"
+                    android:text="Off"
                     android:textColor="@color/white"
                     android:buttonTint="@color/spotify_green"
                     android:checked="true"
@@ -417,7 +572,7 @@
                     android:id="@+id/radioHaasShort"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:text="Curto (10ms) - Sutil"
+                    android:text="Short (10ms) - Subtle"
                     android:textColor="@color/white"
                     android:buttonTint="@color/spotify_green"
                     android:paddingVertical="8dp" />
@@ -426,7 +581,7 @@
                     android:id="@+id/radioHaasMedium"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:text="Medio (30ms) - Moderado"
+                    android:text="Medium (30ms) - Moderate"
                     android:textColor="@color/white"
                     android:buttonTint="@color/spotify_green"
                     android:paddingVertical="8dp" />
@@ -435,7 +590,7 @@
                     android:id="@+id/radioHaasLong"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:text="Longo (50ms) - Intenso"
+                    android:text="Long (50ms) - Intense"
                     android:textColor="@color/white"
                     android:buttonTint="@color/spotify_green"
                     android:paddingVertical="8dp" />
