@@ -1,6 +1,4 @@
-package com.sonicsphere.audio.fragments
-
-import android.graphics.Bitmap
+s.Bitmap
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -156,6 +154,8 @@ class NowPlayingFragment : Fragment() {
             binding.songTitle.text = currentMusic.title
             binding.artistName.text = currentMusic.artist
             binding.albumName.text = currentMusic.album
+            binding.badge3DAudio.visibility =
+              if (getMusicService()?.isBinauralEnabled() == true) View.VISIBLE else View.GONE
 
             if (lastMusicPath != currentMusic.path) {
                 lastMusicPath = currentMusic.path
@@ -166,6 +166,7 @@ class NowPlayingFragment : Fragment() {
             binding.artistName.text = "Selecione uma música"
             binding.albumName.text = ""
             binding.albumArt.setImageResource(R.drawable.album_placeholder)
+            binding.badge3DAudio.visibility = View.GONE
             clearMetadata()
             lastMusicPath = null
         }
