@@ -244,6 +244,7 @@ class StreamingAudioPlayer {
                         // Pipeline — ordem importa
                         equalizerProcessor?.process(samples)   // 2. EQ
                         bassBoostProcessor?.process(samples)   // 1. Grave
+                        if (convolutionEngine?.enabled == true) applyGain(samples, 3.0f) // +9.5dB pré-convolução
                         convolutionEngine?.process(samples)    // 3. HRTF binaural
                         haasProcessor?.process(samples)        // 4. Haas
                         
@@ -279,6 +280,12 @@ class StreamingAudioPlayer {
             }
             Log.d(TAG, "🔚 Loop gen=$myGeneration encerrado")
         }
+    }
+
+    private fun applyGain(samples: ShortArray, factor: Float) {
+    for (i in samples.indices) {
+        samples[i] = (samples[i] * factor).toInt().coerceIn(-32768, 32767).toShort()
+    }
     }
 
     fun pause() {
