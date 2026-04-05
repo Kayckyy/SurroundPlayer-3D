@@ -1,6 +1,5 @@
 package com.sonicsphere.audio.fragments
 
-import android.os.Bitmap
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
