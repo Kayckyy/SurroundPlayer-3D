@@ -244,8 +244,13 @@ class StreamingAudioPlayer {
                         // Pipeline — ordem importa
                         equalizerProcessor?.process(samples)   // 2. EQ
                         bassBoostProcessor?.process(samples)   // 1. Grave
-                        if (convolutionEngine?.enabled == true) applyGain(samples, 3.0f) // +9.5dB pré-convolução
-                        convolutionEngine?.process(samples)    // 3. HRTF binaural
+                        if (convolutionEngine?.enabled == true) {
+                            applyGain(samples, 2.0f)  // compensa a perda da convolução
+                             convolutionEngine?.process(samples)
+                        } else {
+                            
+                            applyGain(samples, 0.7f)  // reduz um pouco o direto pra igualar
+                        }
                         haasProcessor?.process(samples)        // 4. Haas
                         
                         audioTrack?.write(samples, 0, samples.size)
