@@ -245,7 +245,7 @@ class StreamingAudioPlayer {
                         equalizerProcessor?.process(samples)   // 2. EQ
                         bassBoostProcessor?.process(samples)   // 1. Grave
                         if (convolutionEngine?.enabled == true) {
-                            applyGain(samples, 2.0f)  // compensa a perda da convolução
+                            applyGain(samples, 1.7f)  // compensa a perda da convolução
                              convolutionEngine?.process(samples)
                         } else {
                             
@@ -291,6 +291,14 @@ class StreamingAudioPlayer {
     for (i in samples.indices) {
         samples[i] = (samples[i] * factor).toInt().coerceIn(-32768, 32767).toShort()
     }
+    }
+
+    private fun softClip(x: Float): Float {
+    val threshold = 24000f // ~73% de 32767
+    val sign = if (x >= 0) 1f else -1f
+    val abs = kotlin.math.abs(x)
+    return if (abs <= threshold) x
+    else sign * (threshold + (32767f - threshold) * kotlin.math.tanh((abs - threshold) / (32767f - threshold)))
     }
 
     fun pause() {
