@@ -40,9 +40,7 @@ class StreamingAudioPlayer {
         private set
     var bassBoostProcessor: BassBoostProcessor? = null
         private set
-    var reverbProcessor: ReverbProcessor? = null
-        private set
-
+    
     // ConvolutionEngine é INJETADO externamente — persiste entre músicas
     var convolutionEngine: ConvolutionEngine? = null
 
@@ -121,7 +119,6 @@ class StreamingAudioPlayer {
                 }
                 equalizerProcessor = EqualizerProcessor(sampleRate)
                 bassBoostProcessor = BassBoostProcessor(sampleRate)
-                reverbProcessor    = ReverbProcessor(sampleRate)
 
                 // Reseta apenas os buffers internos do convolution (não os IRs)
                 convolutionEngine?.reset()
@@ -248,8 +245,7 @@ class StreamingAudioPlayer {
                         equalizerProcessor?.process(samples)   // 2. EQ
                         bassBoostProcessor?.process(samples)   // 1. Grave
                         convolutionEngine?.process(samples)    // 3. HRTF binaural
-                        reverbProcessor?.process(samples)      // 4. Reverb de sala
-                        haasProcessor?.process(samples)        // 5. Haas
+                        haasProcessor?.process(samples)        // 4. Haas
                         
                         audioTrack?.write(samples, 0, samples.size)
                     }
@@ -310,7 +306,6 @@ class StreamingAudioPlayer {
         haasProcessor = null
         equalizerProcessor = null
         bassBoostProcessor = null
-        reverbProcessor = null
         isPreparedFlag = false
         filePath = null
     }
