@@ -271,7 +271,6 @@ class MusicService : Service() {
 
     fun setReverbEnabled(enabled: Boolean) {
         player?.reverbProcessor?.enabled = enabled
-        prefs.edit().putBoolean("reverb_enabled", enabled).apply()
     }
 
     fun isReverbEnabled(): Boolean = prefs.getBoolean("reverb_enabled", false)
@@ -709,13 +708,6 @@ class MusicService : Service() {
                     setHaasDelay(savedHaasDelay)
                     setPitch(savedPitch)
                     setSpeed(savedSpeed)
-
-                    player?.reverbProcessor?.apply {
-                        setRoomSize(getReverbRoomSize())
-                        setWetLevel(getReverbWet())
-                        setDamping(getReverbDamping())
-                        enabled = prefs.getBoolean("reverb_enabled", false)
-                    }
 
                     val engine = player?.convolutionEngine
                     if (engine != null && !engine.hasPrincipalIrs()) {
