@@ -45,6 +45,22 @@
                 android:singleLine="true" />
 
             <TextView
+                android:id="@+id/badge3DAudio"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="center_horizontal"
+                android:text="✦ 3D AUDIO"
+                android:textColor="@color/spotify_green"
+                android:textSize="10sp"
+                android:textStyle="bold"
+                android:letterSpacing="0.15"
+                android:background="#1A1FFD96"
+                android:paddingHorizontal="10dp"
+                android:paddingVertical="3dp"
+                android:layout_marginBottom="6dp"
+                android:visibility="gone" />
+
+            <TextView
                 android:id="@+id/artistName"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
