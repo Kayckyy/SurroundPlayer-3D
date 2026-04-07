@@ -227,46 +227,6 @@ class MusicService : Service() {
         prefs.edit().putFloat("binaural_post_gain_db", db).apply()
     }
 
-    fun loadConvolutionIr(
-        slot: ConvolutionEngine.IrSlot,
-        file: File,
-        onComplete: ((success: Boolean, error: String?) -> Unit)? = null
-    ) {
-        val engine = convolutionEngine ?: run {
-            onComplete?.invoke(false, "Engine não inicializado"); return
-        }
-        Thread {
-            IrLoader.loadIntoSlot(file, slot, engine) { success, error ->
-                if (success) prefs.edit().putString("ir_slot_${slot.name}", file.absolutePath).apply()
-                handler.post { onComplete?.invoke(success, error) }
-            }
-        }.apply { isDaemon = true; start() }
-    }
-
-    fun unloadConvolutionIr(slot: ConvolutionEngine.IrSlot) {
-        convolutionEngine?.unloadIr(slot)
-        prefs.edit().remove("ir_slot_${slot.name}").apply()
-    }
-
-    private fun loadAndRestoreIrs(engine: ConvolutionEngine) {
-        val defaultsOk = IrLoader.loadDefaults(applicationContext, engine)
-        if (!defaultsOk) Log.w("MusicService", "⚠️ Falha ao carregar IRs padrão dos assets")
-
-        ConvolutionEngine.IrSlot.values().forEach { slot ->
-            val path = prefs.getString("ir_slot_${slot.name}", null) ?: return@forEach
-            val file = File(path)
-            if (file.exists()) {
-                IrLoader.loadIntoSlot(file, slot, engine) { success, _ ->
-                    Log.d("MusicService", "IR externo restaurado $slot: $success")
-                }
-            } else {
-                prefs.edit().remove("ir_slot_${slot.name}").apply()
-            }
-        }
-
-        if (prefs.getBoolean("binaural_enabled", false)) engine.enabled = true
-    }
-
     // ========== AUDIO EFFECTS ==========
 
     private fun setupAudioEffects() {
@@ -681,13 +641,6 @@ class MusicService : Service() {
                     setHaasDelay(savedHaasDelay)
                     setPitch(savedPitch)
                     setSpeed(savedSpeed)
-
-                    val engine = player?.convolutionEngine
-                    if (engine != null && !engine.hasPrincipalIrs()) {
-                        Thread {
-                            loadAndRestoreIrs(engine)
-                        }.apply { isDaemon = true; start() }
-                    }
 
                     Thread {
                         val metadata = AlbumArtExtractor.getMetadata(music.path)
