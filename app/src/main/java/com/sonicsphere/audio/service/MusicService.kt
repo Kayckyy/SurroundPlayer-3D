@@ -221,12 +221,6 @@ class MusicService : Service() {
 
     fun getConvolutionEngine(): ConvolutionEngine? = convolutionEngine
 
-    fun getBinauralPostGainDb(): Float = prefs.getFloat("binaural_post_gain_db", 12f)
-
-    fun setBinauralPostGainDb(db: Float) {
-        prefs.edit().putFloat("binaural_post_gain_db", db).apply()
-    }
-
     // ========== AUDIO EFFECTS ==========
 
     private fun setupAudioEffects() {
