@@ -1,6 +1,5 @@
 package com.sonicsphere.audio.fragments
 
-import android.app.AlertDialog
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -8,11 +7,8 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.SeekBar
-import android.widget.Toast
 import androidx.fragment.app.Fragment
 import com.sonicsphere.audio.databinding.FragmentSettingsBinding
-import com.sonicsphere.audio.service.ConvolutionEngine
-import com.sonicsphere.audio.service.IrLoader
 import com.sonicsphere.audio.service.MusicService
 
 class SettingsFragment : Fragment() {
@@ -121,73 +117,7 @@ class SettingsFragment : Fragment() {
     private fun setupBinaural() {
         binding.switchBinaural.setOnCheckedChangeListener { _, isChecked ->
             getMusicService()?.setBinauralEnabled(isChecked)
-            binding.binauralSlotsContainer.visibility =
-                if (isChecked) View.VISIBLE else View.GONE
-            if (isChecked) refreshIrStatus()
-            updateHaasEnabled(!isChecked)
         }
-
-        binding.btnIrLeft.setOnClickListener  { pickIrFile(ConvolutionEngine.IrSlot.LEFT) }
-        binding.btnIrRight.setOnClickListener { pickIrFile(ConvolutionEngine.IrSlot.RIGHT) }
-        binding.btnIrLeftClear.setOnClickListener  { resetIrToDefault(ConvolutionEngine.IrSlot.LEFT) }
-        binding.btnIrRightClear.setOnClickListener { resetIrToDefault(ConvolutionEngine.IrSlot.RIGHT) }
-    }
-
-    private fun pickIrFile(slot: ConvolutionEngine.IrSlot) {
-        val ctx = requireContext()
-        val files = IrLoader.listAvailableIrs(ctx)
-        if (files.isEmpty()) {
-            Toast.makeText(ctx, "Nenhum WAV em Android/data/com.sonicsphere.audio/files/ir/",
-                Toast.LENGTH_LONG).show()
-            return
-        }
-        val engine = getMusicService()?.getConvolutionEngine() ?: run {
-            Toast.makeText(ctx, "Player nao iniciado", Toast.LENGTH_SHORT).show()
-            return
-        }
-        AlertDialog.Builder(ctx)
-            .setTitle("IR para ${slot.name}")
-            .setItems(files.map { it.name }.toTypedArray<String>()) { _, i ->
-                setIrStatus(slot, "Carregando...")
-                Thread {
-                    IrLoader.loadIntoSlot(files[i], slot, engine) { ok, err ->
-                        handler.post {
-                            if (ok) setIrStatus(slot, files[i].name)
-                            else    setIrStatus(slot, "Erro: $err")
-                        }
-                    }
-                }.start()
-            }
-            .setNegativeButton("Cancelar", null)
-            .show()
-    }
-
-    private fun resetIrToDefault(slot: ConvolutionEngine.IrSlot) {
-        val engine = getMusicService()?.getConvolutionEngine() ?: return
-        val ctx = context ?: return
-        Thread {
-            val wav = IrLoader.readWav(
-                ctx.assets.open("${slot.name.lowercase()}.wav")
-            ) ?: return@Thread
-            engine.loadIr(slot, wav.left, wav.right)
-            getMusicService()?.unloadConvolutionIr(slot)
-            handler.post { setIrStatus(slot, "Padrao (asset)") }
-        }.start()
-    }
-
-    private fun setIrStatus(slot: ConvolutionEngine.IrSlot, text: String) {
-        when (slot) {
-            ConvolutionEngine.IrSlot.LEFT  -> binding.textIrLeft.text  = text
-            ConvolutionEngine.IrSlot.RIGHT -> binding.textIrRight.text = text
-        }
-    }
-
-    private fun refreshIrStatus() {
-        val engine = getMusicService()?.getConvolutionEngine() ?: return
-        setIrStatus(ConvolutionEngine.IrSlot.LEFT,
-            if (engine.isSlotLoaded(ConvolutionEngine.IrSlot.LEFT)) "Carregado" else "Padrao (asset)")
-        setIrStatus(ConvolutionEngine.IrSlot.RIGHT,
-            if (engine.isSlotLoaded(ConvolutionEngine.IrSlot.RIGHT)) "Carregado" else "Padrao (asset)")
     }
 
     // ========== HAAS ==========
@@ -201,19 +131,6 @@ class SettingsFragment : Fragment() {
                 else -> 0
             }
             getMusicService()?.setHaasDelay(ms)
-        }
-    }
-
-    private fun updateHaasEnabled(enabled: Boolean) {
-        binding.radioGroupHaas.isEnabled   = enabled
-        binding.radioHaasOff.isEnabled     = enabled
-        binding.radioHaasShort.isEnabled   = enabled
-        binding.radioHaasMedium.isEnabled  = enabled
-        binding.radioHaasLong.isEnabled    = enabled
-        binding.radioGroupHaas.alpha = if (enabled) 1.0f else 0.38f
-        if (!enabled) {
-            getMusicService()?.setHaasDelay(0)
-            binding.radioHaasOff.isChecked = true
         }
     }
 
@@ -238,12 +155,7 @@ class SettingsFragment : Fragment() {
         binding.textBassBoostValue.text = "${strength / 10}%"
 
         // Binaural
-        val binauralOn = s.isBinauralEnabled()
-        binding.switchBinaural.isChecked = binauralOn
-        binding.binauralSlotsContainer.visibility =
-            if (binauralOn) View.VISIBLE else View.GONE
-        if (binauralOn) refreshIrStatus()
-        updateHaasEnabled(!binauralOn)
+        binding.switchBinaural.isChecked = s.isBinauralEnabled()
 
         // Haas
         when (s.getHaasDelay()) {
@@ -255,14 +167,6 @@ class SettingsFragment : Fragment() {
     }
 
     // ========== UTILITÁRIOS ==========
-
-    private fun seekListener(onFromUser: (Int) -> Unit) = object : SeekBar.OnSeekBarChangeListener {
-        override fun onProgressChanged(sb: SeekBar?, p: Int, fromUser: Boolean) {
-            if (fromUser) onFromUser(p)
-        }
-        override fun onStartTrackingTouch(sb: SeekBar?) {}
-        override fun onStopTrackingTouch(sb: SeekBar?) {}
-    }
 
     private fun startPeriodicUpdate() {
         updateRunnable = object : Runnable {
