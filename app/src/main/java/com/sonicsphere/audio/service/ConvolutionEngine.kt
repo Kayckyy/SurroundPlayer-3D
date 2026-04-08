@@ -5,7 +5,6 @@ import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.cos
 import kotlin.math.min
-import kotlin.math.pow
 import kotlin.math.sin
 
 /**
@@ -14,10 +13,6 @@ import kotlin.math.sin
  * Modelo igual ao OmniAudio Python (process_stereo_fixed):
  *   out_L = conv(inL, IR_LL) + conv(inR, IR_LR) * XTALK_GAIN
  *   out_R = conv(inL, IR_RL) * XTALK_GAIN + conv(inR, IR_RR)
- *
- * Os 4 IRs vêm dos 2 WAVs estéreo existentes:
- *   left.wav  → canal L = IR_LL, canal R = IR_RL
- *   right.wav → canal L = IR_LR, canal R = IR_RR
  *
  * Algoritmo: Overlap-Add com FFT complexa (Cooley-Tukey radix-2).
  * Normalização: L1 norm por IR.
@@ -29,20 +24,20 @@ class ConvolutionEngine(private val sampleRate: Int) {
         const val MAX_IR_SAMPLES = 48000
         private const val BLOCK_SIZE = 256
         private const val FFT_SIZE   = 1024  // >= BLOCK_SIZE + IR_len - 1
-        private const val FADE_STEP = 1f / (48000f * 0.08f)  // ~80ms
-        
-
-        // Atenuação do cross-talk — igual ao Python (0.6x)
         private const val XTALK_GAIN = 0.3f
+    }
+
+    // fadeStep e xtalkLpfCoeff usam sampleRate da instância
+    private val fadeStep get() = 1f / (sampleRate * 0.08f)
+
+    private val xtalkLpfCoeff: Float = run {
+        val rc = 1.0 / (2.0 * PI * 2800.0)
+        val dt = 1.0 / sampleRate.toDouble()
+        (dt / (rc + dt)).toFloat()
     }
 
     enum class IrSlot { LEFT, RIGHT }
 
-    // 4 IRs no domínio da frequência
-    // LL = ouvido esquerdo ← fonte esquerda (direto)
-    // RL = ouvido direito  ← fonte esquerda (cross-talk)
-    // LR = ouvido esquerdo ← fonte direita  (cross-talk)
-    // RR = ouvido direito  ← fonte direita  (direto)
     private var irLL: FloatArray? = null
     private var irRL: FloatArray? = null
     private var irLR: FloatArray? = null
@@ -56,7 +51,6 @@ class ConvolutionEngine(private val sampleRate: Int) {
     private val inR   = FloatArray(FFT_SIZE)
     private var inPos = 0
 
-    // Buffers de overlap separados para cada contribuição
     private val olLL = FloatArray(FFT_SIZE)
     private val olRL = FloatArray(FFT_SIZE)
     private val olLR = FloatArray(FFT_SIZE)
@@ -68,29 +62,18 @@ class ConvolutionEngine(private val sampleRate: Int) {
     private var outAvail = 0
     private var xtalkLpfL = 0f
     private var xtalkLpfR = 0f
-    private val xtalkLpfCoeff: Float = run {
-    val rc = 1.0 / (2.0 * Math.PI * 2800.0)
-    val dt = 1.0 / 48000.0
-    (dt / (rc + dt)).toFloat()
-    
-    }
 
     @Volatile var enabled = false
-    set(value) {
-        field = value
-        fadeTarget = if (value) 1f else 0f
-    }
-    
+        set(value) {
+            field = value
+            fadeTarget = if (value) 1f else 0f
+        }
+
     fun isSlotLoaded(slot: IrSlot) = slot in slotsLoaded
     fun hasPrincipalIrs() = IrSlot.LEFT in slotsLoaded && IrSlot.RIGHT in slotsLoaded
 
     // ========== CARREGAMENTO ==========
 
-    /**
-     * Carrega o par de IRs de um WAV estéreo.
-     * LEFT:  leftChannel = IR_LL, rightChannel = IR_RL
-     * RIGHT: leftChannel = IR_LR, rightChannel = IR_RR
-     */
     fun loadIr(slot: IrSlot, leftChannel: FloatArray, rightChannel: FloatArray) {
         val lenL = min(leftChannel.size,  MAX_IR_SAMPLES)
         val lenR = min(rightChannel.size, MAX_IR_SAMPLES)
@@ -98,7 +81,6 @@ class ConvolutionEngine(private val sampleRate: Int) {
         val irA = leftChannel.copyOf(lenL)
         val irB = rightChannel.copyOf(lenR)
 
-        // Normalização L1 independente por canal
         normalize(irA)
         normalize(irB)
 
@@ -151,40 +133,34 @@ class ConvolutionEngine(private val sampleRate: Int) {
     }
 
     private fun processBlock() {
-        // FFT dos blocos de entrada
         val fL = toComplexBlock(inL)
         val fR = toComplexBlock(inR)
         fft(fL, inverse = false)
         fft(fR, inverse = false)
 
-        // 4 convoluções independentes
         val convLL = FloatArray(FFT_SIZE * 2).also { irLL?.let { ir -> complexMul(fL, ir, it) } }
         val convRL = FloatArray(FFT_SIZE * 2).also { irRL?.let { ir -> complexMul(fL, ir, it) } }
         val convLR = FloatArray(FFT_SIZE * 2).also { irLR?.let { ir -> complexMul(fR, ir, it) } }
         val convRR = FloatArray(FFT_SIZE * 2).also { irRR?.let { ir -> complexMul(fR, ir, it) } }
 
-        // IFFT de cada contribuição
         fft(convLL, inverse = true)
         fft(convRL, inverse = true)
         fft(convLR, inverse = true)
         fft(convRR, inverse = true)
 
-        // Overlap-Add + mix com cross-talk:
-        // outL = conv(inL, IR_LL) + conv(inR, IR_LR) * XTALK
-        // outR = conv(inL, IR_RL) * XTALK + conv(inR, IR_RR)
+        val step = fadeStep
         for (i in 0 until BLOCK_SIZE) {
-    // Fade suave ao ligar/desligar (evita susto de volume)
-    if (fadeGain < fadeTarget) fadeGain = minOf(fadeGain + FADE_STEP, fadeTarget)
-    else if (fadeGain > fadeTarget) fadeGain = maxOf(fadeGain - FADE_STEP, fadeTarget)
+            if (fadeGain < fadeTarget) fadeGain = minOf(fadeGain + step, fadeTarget)
+            else if (fadeGain > fadeTarget) fadeGain = maxOf(fadeGain - step, fadeTarget)
 
-    xtalkLpfL += xtalkLpfCoeff * ((convLR[i*2] + olLR[i]) - xtalkLpfL)
-    xtalkLpfR += xtalkLpfCoeff * ((convRL[i*2] + olRL[i]) - xtalkLpfR)
-    val outL = (convLL[i*2] + olLL[i]) + xtalkLpfL * XTALK_GAIN
-    val outR = xtalkLpfR * XTALK_GAIN + (convRR[i*2] + olRR[i])
-    outBufL[i] = outL * fadeGain
-    outBufR[i] = outR * fadeGain
+            xtalkLpfL += xtalkLpfCoeff * ((convLR[i*2] + olLR[i]) - xtalkLpfL)
+            xtalkLpfR += xtalkLpfCoeff * ((convRL[i*2] + olRL[i]) - xtalkLpfR)
+            val outL = (convLL[i*2] + olLL[i]) + xtalkLpfL * XTALK_GAIN
+            val outR = xtalkLpfR * XTALK_GAIN + (convRR[i*2] + olRR[i])
+            outBufL[i] = outL * fadeGain
+            outBufR[i] = outR * fadeGain
         }
-        // Salva tails
+
         for (i in BLOCK_SIZE until FFT_SIZE) {
             olLL[i - BLOCK_SIZE] = convLL[i*2]
             olRL[i - BLOCK_SIZE] = convRL[i*2]
@@ -238,9 +214,12 @@ class ConvolutionEngine(private val sampleRate: Int) {
             while (pos < n) {
                 var curRe = 1.0; var curIm = 0.0
                 for (k in 0 until len / 2) {
-                    val uRe = data[(pos+k)*2].toDouble();       val uIm = data[(pos+k)*2+1].toDouble()
-                    val vRe = data[(pos+k+len/2)*2].toDouble(); val vIm = data[(pos+k+len/2)*2+1].toDouble()
-                    val tRe = curRe*vRe - curIm*vIm;           val tIm = curRe*vIm + curIm*vRe
+                    val uRe = data[(pos+k)*2].toDouble()
+                    val uIm = data[(pos+k)*2+1].toDouble()
+                    val vRe = data[(pos+k+len/2)*2].toDouble()
+                    val vIm = data[(pos+k+len/2)*2+1].toDouble()
+                    val tRe = curRe*vRe - curIm*vIm
+                    val tIm = curRe*vIm + curIm*vRe
                     data[(pos+k)*2]         = (uRe+tRe).toFloat()
                     data[(pos+k)*2+1]       = (uIm+tIm).toFloat()
                     data[(pos+k+len/2)*2]   = (uRe-tRe).toFloat()
