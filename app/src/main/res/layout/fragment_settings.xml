@@ -223,7 +223,7 @@
                 android:textSize="12sp"
                 android:layout_marginBottom="16dp" />
 
-            <!-- Painel de slots (visivel quando switch ON) -->
+            <!-- Painel de slots (visivel quando switch ON) 
             <LinearLayout
                 android:id="@+id/binauralSlotsContainer"
                 android:layout_width="match_parent"
@@ -231,7 +231,7 @@
                 android:orientation="vertical"
                 android:visibility="gone">
 
-                <!-- Slot LEFT -->
+                <!-- Slot LEFT 
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
@@ -284,7 +284,7 @@
 
                 </LinearLayout>
 
-                <!-- Slot RIGHT -->
+                <!-- Slot RIGHT 
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
@@ -340,7 +340,8 @@
 
         </LinearLayout>
 
-        <!-- SECAO REVERB -->
+        
+        <!-- SECAO REVERB 
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -388,7 +389,7 @@
                 android:orientation="vertical"
                 android:visibility="gone">
 
-                <!-- Room Size -->
+                <!-- Room Size 
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
@@ -423,7 +424,7 @@
                     android:progressTint="@color/spotify_green"
                     android:thumbTint="@color/spotify_green" />
 
-                <!-- Wet -->
+                <!-- Wet 
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
@@ -458,7 +459,7 @@
                     android:progressTint="@color/spotify_green"
                     android:thumbTint="@color/spotify_green" />
 
-                <!-- Damping -->
+                <!-- Damping 
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
