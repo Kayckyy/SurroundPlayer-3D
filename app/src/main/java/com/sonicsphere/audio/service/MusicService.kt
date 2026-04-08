@@ -112,7 +112,10 @@ class MusicService : Service() {
         prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
         prefs.edit().putBoolean(KEY_SERVICE_RUNNING, true).apply()
 
-        convolutionEngine = ConvolutionEngine(44100)
+        convolutionEngine = ConvolutionEngine(48000)
+        Thread {
+            convolutionEngine?.let { IrLoader.loadSynthetic(it) }
+        }.apply { isDaemon = true; start() }
 
         createNotificationChannel()
         setupMediaSession()
