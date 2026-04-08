@@ -36,8 +36,8 @@ object IrLoader {
         bitDepth: BitDepth = BitDepth.B16
     ) {
         val (irL, irR) = generateHrtf(azimuthDeg, bitDepth)
-        engine.loadIr(ConvolutionEngine.IrSlot.LEFT,  irL, irR)
-        engine.loadIr(ConvolutionEngine.IrSlot.RIGHT, irR, irL)
+        engine.loadIr(ConvolutionEngine.IrSlot.LEFT,  irL, irR, skipNormalize = true)
+        engine.loadIr(ConvolutionEngine.IrSlot.RIGHT, irR, irL, skipNormalize = true)
         Log.d(TAG, "✅ IR sintética carregada | az=${azimuthDeg}° | $bitDepth")
     }
 
