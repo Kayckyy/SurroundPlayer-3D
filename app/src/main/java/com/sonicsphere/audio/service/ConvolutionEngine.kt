@@ -26,10 +26,10 @@ class ConvolutionEngine(private val sampleRate: Int) {
 
     companion object {
         private const val TAG = "ConvolutionEngine"
-        const val MAX_IR_SAMPLES = 44100
+        const val MAX_IR_SAMPLES = 48000
         private const val BLOCK_SIZE = 256
         private const val FFT_SIZE   = 1024  // >= BLOCK_SIZE + IR_len - 1
-        private const val FADE_STEP = 1f / (44100f * 0.08f)  // ~80ms
+        private const val FADE_STEP = 1f / (48000f * 0.08f)  // ~80ms
         
 
         // Atenuação do cross-talk — igual ao Python (0.6x)
@@ -70,7 +70,7 @@ class ConvolutionEngine(private val sampleRate: Int) {
     private var xtalkLpfR = 0f
     private val xtalkLpfCoeff: Float = run {
     val rc = 1.0 / (2.0 * Math.PI * 2800.0)
-    val dt = 1.0 / 44100.0
+    val dt = 1.0 / 48000.0
     (dt / (rc + dt)).toFloat()
     
     }
