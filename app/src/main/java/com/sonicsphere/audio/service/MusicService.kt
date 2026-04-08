@@ -29,7 +29,6 @@ import com.sonicsphere.audio.MainActivity
 import com.sonicsphere.audio.metadata.Music
 import com.sonicsphere.audio.R
 import java.io.File
-import kotlin.math.pow
 
 class MusicService : Service() {
 
