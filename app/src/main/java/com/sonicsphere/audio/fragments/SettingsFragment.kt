@@ -124,14 +124,14 @@ class SettingsFragment : Fragment() {
             binding.binauralSlotsContainer.visibility =
                 if (isChecked) View.VISIBLE else View.GONE
             if (isChecked) refreshIrStatus()
+            updateHaasEnabled(!isChecked)
         }
 
         binding.btnIrLeft.setOnClickListener  { pickIrFile(ConvolutionEngine.IrSlot.LEFT) }
         binding.btnIrRight.setOnClickListener { pickIrFile(ConvolutionEngine.IrSlot.RIGHT) }
-
         binding.btnIrLeftClear.setOnClickListener  { resetIrToDefault(ConvolutionEngine.IrSlot.LEFT) }
         binding.btnIrRightClear.setOnClickListener { resetIrToDefault(ConvolutionEngine.IrSlot.RIGHT) }
-        }
+    }
 
     private fun pickIrFile(slot: ConvolutionEngine.IrSlot) {
         val ctx = requireContext()
@@ -147,7 +147,7 @@ class SettingsFragment : Fragment() {
         }
         AlertDialog.Builder(ctx)
             .setTitle("IR para ${slot.name}")
-            .setItems(files.map { it.name }.toTypedArray()) { _, i ->
+            .setItems(files.map { it.name }.toTypedArray<String>()) { _, i ->
                 setIrStatus(slot, "Carregando...")
                 Thread {
                     IrLoader.loadIntoSlot(files[i], slot, engine) { ok, err ->
@@ -204,6 +204,19 @@ class SettingsFragment : Fragment() {
         }
     }
 
+    private fun updateHaasEnabled(enabled: Boolean) {
+        binding.radioGroupHaas.isEnabled   = enabled
+        binding.radioHaasOff.isEnabled     = enabled
+        binding.radioHaasShort.isEnabled   = enabled
+        binding.radioHaasMedium.isEnabled  = enabled
+        binding.radioHaasLong.isEnabled    = enabled
+        binding.radioGroupHaas.alpha = if (enabled) 1.0f else 0.38f
+        if (!enabled) {
+            getMusicService()?.setHaasDelay(0)
+            binding.radioHaasOff.isChecked = true
+        }
+    }
+
     // ========== SYNC COM SERVICE ==========
 
     private fun syncAllFromService() {
@@ -225,10 +238,12 @@ class SettingsFragment : Fragment() {
         binding.textBassBoostValue.text = "${strength / 10}%"
 
         // Binaural
-        binding.switchBinaural.isChecked = s.isBinauralEnabled()
+        val binauralOn = s.isBinauralEnabled()
+        binding.switchBinaural.isChecked = binauralOn
         binding.binauralSlotsContainer.visibility =
-            if (s.isBinauralEnabled()) View.VISIBLE else View.GONE
-        if (s.isBinauralEnabled()) refreshIrStatus()
+            if (binauralOn) View.VISIBLE else View.GONE
+        if (binauralOn) refreshIrStatus()
+        updateHaasEnabled(!binauralOn)
 
         // Haas
         when (s.getHaasDelay()) {
