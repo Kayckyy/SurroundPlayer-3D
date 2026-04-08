@@ -74,27 +74,29 @@ class ConvolutionEngine(private val sampleRate: Int) {
 
     // ========== CARREGAMENTO ==========
 
-    fun loadIr(slot: IrSlot, leftChannel: FloatArray, rightChannel: FloatArray) {
-        val lenL = min(leftChannel.size,  MAX_IR_SAMPLES)
-        val lenR = min(rightChannel.size, MAX_IR_SAMPLES)
+    fun loadIr(slot: IrSlot, leftChannel: FloatArray, rightChannel: FloatArray, skipNormalize: Boolean = false) {
+    val lenL = min(leftChannel.size, MAX_IR_SAMPLES)
+    val lenR = min(rightChannel.size, MAX_IR_SAMPLES)
 
-        val irA = leftChannel.copyOf(lenL)
-        val irB = rightChannel.copyOf(lenR)
+    val irA = leftChannel.copyOf(lenL)
+    val irB = rightChannel.copyOf(lenR)
 
+    if (!skipNormalize) {
         normalize(irA)
         normalize(irB)
+    }
 
-        val freqA = toFreq(irA)
-        val freqB = toFreq(irB)
+    val freqA = toFreq(irA)
+    val freqB = toFreq(irB)
 
-        when (slot) {
-            IrSlot.LEFT  -> { irLL = freqA; irRL = freqB }
-            IrSlot.RIGHT -> { irLR = freqA; irRR = freqB }
-        }
+    when (slot) {
+        IrSlot.LEFT  -> { irLL = freqA; irRL = freqB }
+        IrSlot.RIGHT -> { irLR = freqA; irRR = freqB }
+    }
 
-        slotsLoaded.add(slot)
-        reset()
-        Log.d(TAG, "IR carregado: $slot | ${lenL}/${lenR} samples")
+    slotsLoaded.add(slot)
+    reset()
+    Log.d(TAG, "IR carregado: $slot | ${lenL}/${lenR} samples")
     }
 
     fun unloadIr(slot: IrSlot) {
