@@ -17,7 +17,7 @@ import kotlin.math.sin
  * Algoritmo: Overlap-Add com FFT complexa (Cooley-Tukey radix-2).
  * Normalização: L1 norm por IR.
  */
-class ConvolutionEngine(private val sampleRate: Int) {
+class ConvolutionEngine(val sampleRate: Int) {
 
     companion object {
         private const val TAG = "ConvolutionEngine"
