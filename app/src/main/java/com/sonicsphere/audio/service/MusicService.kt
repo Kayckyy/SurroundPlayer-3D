@@ -635,12 +635,14 @@ class MusicService : Service() {
 
                     val fileSampleRate = player?.getSampleRate() ?: 48000
                     if (convolutionEngine?.sampleRate != fileSampleRate) {
+                        val wasEnabled = convolutionEngine?.enabled ?: false
                         convolutionEngine = ConvolutionEngine(fileSampleRate)
+                        convolutionEngine?.enabled = wasEnabled
                         player?.convolutionEngine = convolutionEngine
                         Thread {
                             convolutionEngine?.let { IrLoader.loadSynthetic(it) }
                         }.apply { isDaemon = true; start() }
-                    }
+                        }
 
                     setupAudioEffects()
                     setHaasDelay(savedHaasDelay)
