@@ -44,7 +44,6 @@ object IrLoader {
 
     private fun generateHrtf(
         azimuthDeg: Float,
-        bitDepth: BitDepth
     ): Pair<FloatArray, FloatArray> {
         val az = azimuthDeg * PI / 180.0
 
