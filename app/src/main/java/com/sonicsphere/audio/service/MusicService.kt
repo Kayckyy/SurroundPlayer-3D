@@ -643,6 +643,7 @@ class MusicService : Service() {
                             convolutionEngine?.let { IrLoader.loadSynthetic(it) }
                         }.apply { isDaemon = true; start() }
                         }
+                    convolutionEngine?.enabled = prefs.getBoolean("binaural_enabled", false)
 
                     setupAudioEffects()
                     setHaasDelay(savedHaasDelay)
