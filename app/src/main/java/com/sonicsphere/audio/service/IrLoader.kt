@@ -66,19 +66,6 @@ object IrLoader {
             irR[i] = if (src >= 0 && src < IR_LENGTH) raw[src] else 0f
         }
 
-        // HPF 1-polo (~80Hz)
-        val hpfCoeff = (2.0f * PI.toFloat() * 40f / SAMPLE_RATE.toFloat()).coerceIn(0f, 1f)
-        var hpfStateL = 0f
-        var hpfStateR = 0f
-        for (i in irL.indices) {
-            hpfStateL = hpfCoeff * (hpfStateL + irL[i] - (if (i > 0) irL[i-1] else 0f))
-            irL[i] = hpfStateL
-        }
-        for (i in irR.indices) {
-            hpfStateR = hpfCoeff * (hpfStateR + irR[i] - (if (i > 0) irR[i-1] else 0f))
-            irR[i] = hpfStateR
-        }
-
         // Head shadow — LPF no contralateral
         val lpfCoeff = 0.6f
         var lpfState = 0f
