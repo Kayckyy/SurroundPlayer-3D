@@ -116,7 +116,13 @@ class SettingsFragment : Fragment() {
 
     private fun setupBinaural() {
         binding.switchBinaural.setOnCheckedChangeListener { _, isChecked ->
-            getMusicService()?.setBinauralEnabled(isChecked)
+    val service = getMusicService()
+    if (service != null) {
+        service.setBinauralEnabled(isChecked)
+    } else {
+        Toast.makeText(requireContext(), "Inicie uma música primeiro", Toast.LENGTH_SHORT).show()
+        binding.switchBinaural.isChecked = !isChecked
+    }
         }
     }
 
