@@ -16,7 +16,7 @@ object IrLoader {
 
     private const val HEAD_RADIUS_M = 0.0875
     private const val SOUND_SPEED   = 343.0
-    private const val IR_GAIN = 0.15f
+    private const val IR_GAIN = 0.5f
 
     // ========== API PÚBLICA ==========
 
@@ -67,7 +67,7 @@ object IrLoader {
         }
 
         // HPF 1-polo (~80Hz)
-        val hpfCoeff = (2.0f * PI.toFloat() * 80f / SAMPLE_RATE.toFloat()).coerceIn(0f, 1f)
+        val hpfCoeff = (2.0f * PI.toFloat() * 40f / SAMPLE_RATE.toFloat()).coerceIn(0f, 1f)
         var hpfStateL = 0f
         var hpfStateR = 0f
         for (i in irL.indices) {
