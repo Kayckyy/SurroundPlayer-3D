@@ -105,7 +105,7 @@ class StreamingAudioPlayer {
                         .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
                         .build(),
                     AudioFormat.Builder()
-                        .setSampleRate(sampleRate)
+                        .setSampleRate(48000)
                         .setChannelMask(channelMask)
                         .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
                         .build(),
