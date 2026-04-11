@@ -102,16 +102,6 @@ object IrLoader {
         }
 
         // Quantização simbólica para bit depth escolhida
-        return Pair(quantize(irL, bitDepth), quantize(irR, bitDepth))
-    }
-
-    private fun quantize(ir: FloatArray, bitDepth: BitDepth): FloatArray {
-        val levels = when (bitDepth) {
-            BitDepth.B16 -> 32768f
-            BitDepth.B24 -> 8388608f
-        }
-        return FloatArray(ir.size) {
-            (round(ir[it] * levels) / levels).toFloat()
-        }
+        return Pair(irL, irR)
     }
 }
