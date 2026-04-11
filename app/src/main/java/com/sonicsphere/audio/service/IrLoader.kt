@@ -16,7 +16,7 @@ object IrLoader {
 
     private const val HEAD_RADIUS_M = 0.0875
     private const val SOUND_SPEED   = 343.0
-    private const val IR_GAIN = 0.5f
+    private const val IR_GAIN = 0.35f
 
     // ========== API PÚBLICA ==========
 
@@ -25,8 +25,8 @@ object IrLoader {
         azimuthDeg: Float = 90f
     ) {
         val (irL, irR) = generateHrtf(azimuthDeg)
-        engine.loadIr(ConvolutionEngine.IrSlot.LEFT,  irL, irR, skipNormalize = true)
-        engine.loadIr(ConvolutionEngine.IrSlot.RIGHT, irR, irL, skipNormalize = true)
+        engine.loadIr(ConvolutionEngine.IrSlot.LEFT,  irL, irR)
+        engine.loadIr(ConvolutionEngine.IrSlot.RIGHT, irR, irL)
         Log.d(TAG, "✅ IR sintética carregada | az=${azimuthDeg}°")
     }
 
