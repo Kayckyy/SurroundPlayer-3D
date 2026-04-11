@@ -57,6 +57,19 @@ object IrLoader {
         val ildGain = (1.0 - 0.45 * sin(az).absoluteValue).toFloat()
             .coerceIn(0.4f, 1.0f)
 
+        // HPF 1-polo para remover subgrave da IR (~80Hz)
+        val hpfCoeff = 1.0f - (2.0f * PI.toFloat() * 80f / SAMPLE_RATE.toFloat())
+        var hpfStateL = 0f
+        var hpfStateR = 0f
+        for (i in irL.indices) {
+            hpfStateL = hpfCoeff * (hpfStateL + irL[i] - (if (i > 0) irL[i-1] else 0f))
+            irL[i] = hpfStateL
+        }
+        for (i in irR.indices) {
+            hpfStateR = hpfCoeff * (hpfStateR + irR[i] - (if (i > 0) irR[i-1] else 0f))
+            irR[i] = hpfStateR
+        }
+
         val irL = FloatArray(IR_LENGTH)
         val irR = FloatArray(IR_LENGTH)
 
