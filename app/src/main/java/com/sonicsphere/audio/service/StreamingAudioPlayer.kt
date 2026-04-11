@@ -137,6 +137,8 @@ class StreamingAudioPlayer {
         }.apply { isDaemon = true; name = "PrepareThread"; start() }
     }
 
+    fun getSampleRate(): Int = sampleRate
+
     fun play() {
         if (!isPreparedFlag) return
 
