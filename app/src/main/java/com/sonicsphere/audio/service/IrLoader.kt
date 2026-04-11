@@ -20,7 +20,7 @@ object IrLoader {
     private const val SOUND_SPEED   = 343.0
 
     // Ganho máximo da IR — seguro, sem estourar
-    private const val IR_GAIN = 0.35f
+    private const val IR_GAIN = 0.15f
 
     enum class BitDepth { B16, B24 }
 
