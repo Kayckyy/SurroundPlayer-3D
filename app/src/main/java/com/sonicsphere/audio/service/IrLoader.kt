@@ -81,7 +81,7 @@ object IrLoader {
         }
 
         // HPF 1-polo para remover subgrave da IR (~80Hz)
-        val hpfCoeff = 1.0f - (2.0f * PI.toFloat() * 80f / SAMPLE_RATE.toFloat())
+        val hpfCoeff = (2.0f * PI.toFloat() * 80f / SAMPLE_RATE.toFloat()).coerceIn(0f, 1f)
         var hpfStateL = 0f
         var hpfStateR = 0f
         for (i in irL.indices) {
@@ -94,7 +94,7 @@ object IrLoader {
         }
 
         // Head shadow — LPF simples (1-polo) no contralateral
-        val lpfCoeff = 0.25f
+        val lpfCoeff = 0.6f
         var lpfState = 0f
         for (i in irR.indices) {
             lpfState += lpfCoeff * (irR[i] - lpfState)
