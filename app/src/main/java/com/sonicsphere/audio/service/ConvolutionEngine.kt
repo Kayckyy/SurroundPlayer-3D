@@ -126,8 +126,8 @@ class ConvolutionEngine(val sampleRate: Int) {
             }
 
             if (outAvail > 0) {
-                buffer[frame * 2]     = (outBufL[outPos].coerceIn(-0.95f, 0.95f) * 32767f).toInt().toShort()
-                buffer[frame * 2 + 1] = (outBufR[outPos].coerceIn(-0.95f, 0.95f) * 32767f).toInt().toShort()
+                buffer[frame * 2]     = (outBufL[outPos] * 0.1f).coerceIn(-0.95f, 0.95f).times(32767f).toInt().toShort()
+                buffer[frame * 2 + 1] = (outBufR[outPos] * 0.1f).coerceIn(-0.95f, 0.95f).times(32767f).toInt().toShort()
                 outPos++
                 outAvail--
             }
