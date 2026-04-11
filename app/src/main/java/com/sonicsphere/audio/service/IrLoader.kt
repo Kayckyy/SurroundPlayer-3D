@@ -32,7 +32,7 @@ object IrLoader {
      */
     fun loadSynthetic(
         engine: ConvolutionEngine,
-        azimuthDeg: Float = 30f,
+        azimuthDeg: Float = 90f,
         bitDepth: BitDepth = BitDepth.B16
     ) {
         val (irL, irR) = generateHrtf(azimuthDeg, bitDepth)
