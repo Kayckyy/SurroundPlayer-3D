@@ -54,34 +54,40 @@ class HaasProcessor(private val sampleRate: Int) {
      * Aplica delay no canal direito
      */
     fun process(buffer: ShortArray) {
-        if (!enabled || delaySamples == 0 || buffer.isEmpty()) return
+    if (!enabled || delaySamples == 0 || buffer.isEmpty()) return
 
-        // Processar em pares (L/R)
-        var i = 0
-        while (i < buffer.size - 1) {
-            // Ler samples L/R como float
-            val leftSample = buffer[i].toFloat() / Short.MAX_VALUE
-            val rightSample = buffer[i + 1].toFloat() / Short.MAX_VALUE
+    // Threshold de "sideness" — abaixo disso considera mid puro
+    // 0.02 = ~2% de diferença entre L e R
+    val sideThreshold = 0.02f
 
-            // Ler samples atrasados do buffer circular
-            val delayedLeft = delayBufferLeft[bufferIndex]
-            val delayedRight = delayBufferRight[bufferIndex]
+    var i = 0
+    while (i < buffer.size - 1) {
+        val leftSample  = buffer[i].toFloat()     / Short.MAX_VALUE
+        val rightSample = buffer[i + 1].toFloat() / Short.MAX_VALUE
 
-            // Escrever samples atuais no buffer
-            delayBufferLeft[bufferIndex] = leftSample
-            delayBufferRight[bufferIndex] = rightSample
+        val delayedLeft  = delayBufferLeft[bufferIndex]
+        val delayedRight = delayBufferRight[bufferIndex]
 
-            // Avançar índice circular
-            bufferIndex = (bufferIndex + 1) % delaySamples
+        delayBufferLeft[bufferIndex]  = leftSample
+        delayBufferRight[bufferIndex] = rightSample
 
-            // HAAS EFFECT: Left direto, Right com delay
-            buffer[i] = (leftSample * Short.MAX_VALUE).toInt().toShort()
+        bufferIndex = (bufferIndex + 1) % delaySamples
+
+        // Se a diferença L/R for insignificante, é mid puro — bypass do ITD
+        val side = kotlin.math.abs(leftSample - rightSample)
+        if (side < sideThreshold) {
+            // Deixa o sample intocado (bass, vocal central)
+            buffer[i]     = (leftSample  * Short.MAX_VALUE).toInt().toShort()
+            buffer[i + 1] = (rightSample * Short.MAX_VALUE).toInt().toShort()
+        } else {
+            // Tem conteúdo side — aplica Haas normalmente
+            buffer[i]     = (leftSample  * Short.MAX_VALUE).toInt().toShort()
             buffer[i + 1] = (delayedRight * Short.MAX_VALUE).toInt().toShort()
-
-            i += 2
         }
-    }
 
+        i += 2
+    }
+    }
     fun isEnabled(): Boolean = enabled
     fun getDelayMs(): Int = delayMs
 }
