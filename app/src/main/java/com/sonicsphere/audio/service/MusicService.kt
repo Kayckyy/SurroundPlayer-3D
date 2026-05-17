@@ -213,12 +213,23 @@ class MusicService : Service() {
     fun isBinauralEnabled(): Boolean = convolutionEngine?.enabled ?: false
 
     fun setBinauralEnabled(enabled: Boolean) {
-        convolutionEngine?.enabled = enabled
-        prefs.edit().apply {
-            putBoolean("binaural_enabled", enabled)
-            putBoolean("reverb_enabled", enabled)
-        }.apply()
-        Log.d("MusicService", "🎧 Áudio 3D ${if (enabled) "ON" else "OFF"}")
+    convolutionEngine?.enabled = enabled
+    prefs.edit().apply {
+        putBoolean("binaural_enabled", enabled)
+        putBoolean("reverb_enabled", enabled)
+    }.apply()
+
+    // Se ligou e os IRs ainda não estão carregados, carrega agora
+    if (enabled) {
+        val engine = convolutionEngine
+        if (engine != null && !engine.hasPrincipalIrs()) {
+            Thread {
+                loadAndRestoreIrs(engine)
+            }.apply { isDaemon = true; start() }
+        }
+    }
+
+    Log.d("MusicService", "🎧 Áudio 3D ${if (enabled) "ON" else "OFF"}")
     }
 
     fun getConvolutionEngine(): ConvolutionEngine? = convolutionEngine
