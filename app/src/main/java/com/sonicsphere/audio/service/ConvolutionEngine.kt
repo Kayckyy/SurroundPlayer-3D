@@ -126,10 +126,14 @@ class ConvolutionEngine(val sampleRate: Int) {
             }
 
             if (outAvail > 0) {
-                buffer[frame * 2]     = (outBufL[outPos] * 0.1f).coerceIn(-0.95f, 0.95f).times(32767f).toInt().toShort()
-                buffer[frame * 2 + 1] = (outBufR[outPos] * 0.1f).coerceIn(-0.95f, 0.95f).times(32767f).toInt().toShort()
+                buffer[frame * 2]     = (outBufL[outPos].coerceIn(-0.95f, 0.95f) * 32767f).toInt().toShort()
+                buffer[frame * 2 + 1] = (outBufR[outPos].coerceIn(-0.95f, 0.95f) * 32767f).toInt().toShort()
                 outPos++
                 outAvail--
+            }
+            else {
+                buffer[frame * 2]     = 0
+                buffer[frame * 2 + 1] = 0
             }
         }
     }
@@ -177,8 +181,8 @@ class ConvolutionEngine(val sampleRate: Int) {
     // ========== UTILITÁRIOS ==========
 
     private fun normalize(ir: FloatArray) {
-        val l1 = ir.sumOf { abs(it).toDouble() }.toFloat()
-        if (l1 > 1e-6f) for (i in ir.indices) ir[i] /= l1
+        val peak = ir.maxOfOrNull { abs(it) } ?: return
+        if (peak > 1e-6f) for (i in ir.indices) ir[i] /= peak
     }
 
     private fun toFreq(ir: FloatArray): FloatArray {
