@@ -210,9 +210,11 @@ class MusicService : Service() {
 
     // ========== CONVOLUTION ENGINE ==========
 
-    fun isBinauralEnabled(): Boolean = convolutionEngine?.enabled ?: false
+    // ========== CONVOLUTION ENGINE ==========
 
-    fun setBinauralEnabled(enabled: Boolean) {
+fun isBinauralEnabled(): Boolean = convolutionEngine?.enabled ?: false
+
+fun setBinauralEnabled(enabled: Boolean) {
     convolutionEngine?.enabled = enabled
     prefs.edit().apply {
         putBoolean("binaural_enabled", enabled)
@@ -229,11 +231,9 @@ class MusicService : Service() {
     }
 
     Log.d("MusicService", "🎧 Áudio 3D ${if (enabled) "ON" else "OFF"}")
-    }
-    
-    Log.d("MusicService", "🎧 Áudio 3D ${if (enabled) "ON" else "OFF"}")
-    }
+}
 
+fun getConvolutionEngine(): ConvolutionEngine? = convolutionEngine
     fun getConvolutionEngine(): ConvolutionEngine? = convolutionEngine
 
     // ========== AUDIO EFFECTS ==========
