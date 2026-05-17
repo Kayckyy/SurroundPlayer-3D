@@ -222,10 +222,14 @@ class MusicService : Service() {
     // Se ligou e os IRs ainda não estão carregados, carrega agora
     if (enabled) {
         val engine = convolutionEngine
-        if (engine != null && !engine.hasPrincipalIrs()) {
-            Thread {
-                loadAndRestoreIrs(engine)
-            }.apply { isDaemon = true; start() }
+        if (enabled) {
+            val engine = convolutionEngine
+            if (engine != null && !engine.hasPrincipalIrs()) {
+                val self = this@MusicService
+                Thread {
+                    self.loadAndRestoreIrs(engine)
+                }.apply { isDaemon = true; start() }
+            }
         }
     }
 
