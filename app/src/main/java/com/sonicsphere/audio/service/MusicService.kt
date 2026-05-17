@@ -219,20 +219,18 @@ class MusicService : Service() {
         putBoolean("reverb_enabled", enabled)
     }.apply()
 
-    // Se ligou e os IRs ainda não estão carregados, carrega agora
     if (enabled) {
         val engine = convolutionEngine
-        if (enabled) {
-            val engine = convolutionEngine
-            if (engine != null && !engine.hasPrincipalIrs()) {
-                val self = this@MusicService
-                Thread {
-                    self.loadAndRestoreIrs(engine)
-                }.apply { isDaemon = true; start() }
-            }
+        if (engine != null && !engine.hasPrincipalIrs()) {
+            Thread {
+                loadAndRestoreIrs(engine)
+            }.apply { isDaemon = true; start() }
         }
     }
 
+    Log.d("MusicService", "🎧 Áudio 3D ${if (enabled) "ON" else "OFF"}")
+    }
+    
     Log.d("MusicService", "🎧 Áudio 3D ${if (enabled) "ON" else "OFF"}")
     }
 
