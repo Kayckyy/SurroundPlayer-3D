@@ -181,8 +181,8 @@ class ConvolutionEngine(val sampleRate: Int) {
     // ========== UTILITÁRIOS ==========
 
     private fun normalize(ir: FloatArray) {
-        val peak = ir.maxOfOrNull { abs(it) } ?: return
-        if (peak > 1e-6f) for (i in ir.indices) ir[i] /= peak
+        val rms = kotlin.math.sqrt(ir.sumOf { (it * it).toDouble() }.toFloat() / ir.size)
+        if (rms > 1e-6f) for (i in ir.indices) ir[i] /= rms
     }
 
     private fun toFreq(ir: FloatArray): FloatArray {
