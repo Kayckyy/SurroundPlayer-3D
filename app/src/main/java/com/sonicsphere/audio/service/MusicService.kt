@@ -232,8 +232,6 @@ fun setBinauralEnabled(enabled: Boolean) {
 
     Log.d("MusicService", "🎧 Áudio 3D ${if (enabled) "ON" else "OFF"}")
 }
-
-fun getConvolutionEngine(): ConvolutionEngine? = convolutionEngine
     fun getConvolutionEngine(): ConvolutionEngine? = convolutionEngine
 
     // ========== AUDIO EFFECTS ==========
