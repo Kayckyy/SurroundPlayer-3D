@@ -210,8 +210,6 @@ class MusicService : Service() {
 
     // ========== CONVOLUTION ENGINE ==========
 
-    // ========== CONVOLUTION ENGINE ==========
-
 fun isBinauralEnabled(): Boolean = convolutionEngine?.enabled ?: false
 
 fun setBinauralEnabled(enabled: Boolean) {
@@ -225,7 +223,7 @@ fun setBinauralEnabled(enabled: Boolean) {
         val engine = convolutionEngine
         if (engine != null && !engine.hasPrincipalIrs()) {
             Thread {
-                loadAndRestoreIrs(engine)
+                IrLoader.loadSynthetic(engine)
             }.apply { isDaemon = true; start() }
         }
     }
